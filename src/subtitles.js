@@ -68,11 +68,11 @@ function buildAutoSubtitles(englishSubtitles, options = {}) {
     .filter(Boolean)
 }
 
-function buildEnglishTracks(upstream) {
+function buildEnglishTracks(upstream, options = {}) {
   return dedupeSubtitles(getEnglishSubtitles(upstream))
     .slice(0, MAX_SUBTITLE_TRACKS)
     .map((subtitle, index) => ({
-      id: `opensubtitles-eng-${diagnosticSubtitleId(subtitle, index)}`,
+      id: `${options.upstreamSubtitles ? 'vueo' : 'opensubtitles'}-eng-${diagnosticSubtitleId(subtitle, index)}`,
       url: String(subtitle.url),
       lang: 'eng'
     }))
@@ -81,7 +81,11 @@ function buildEnglishTracks(upstream) {
 async function handleSubtitles(args, options = {}) {
   const startedAt = nowMs()
   const requestId = crypto.randomUUID()
-  if (!isSupportedRequest(args)) {
+  const vueoUpstream = Array.isArray(options.upstreamSubtitles)
+  const supported = vueoUpstream
+    ? ['movie', 'series'].includes(args?.type) && /^[\w:.-]{1,128}$/.test(String(args?.id || ''))
+    : isSupportedRequest(args)
+  if (!supported) {
     await emitDiagnostic(options, {
       event: 'subtitle-result', result: 'unsupported-request',
       type: args && args.type, id: args && args.id, subtitleCount: 0
@@ -91,7 +95,7 @@ async function handleSubtitles(args, options = {}) {
 
   try {
     const upstreamStartedAt = nowMs()
-    const upstream = await fetchOpenSubtitles(args, options)
+    const upstream = vueoUpstream ? options.upstreamSubtitles : await fetchOpenSubtitles(args, options)
     const upstreamMs = roundMs(nowMs() - upstreamStartedAt)
     const malay = dedupeSubtitles(getMalaySubtitles(upstream))
       .slice(0, MAX_SUBTITLE_TRACKS).map(toNativeMalay)
@@ -103,7 +107,7 @@ async function handleSubtitles(args, options = {}) {
     // Translation starts only when the player requests the selected /translated/*.vtt URL.
     const aiTracks = apiKey ? buildAutoSubtitles(englishCandidates, options) : []
     const englishTracks = options.includeEnglishTracks
-      ? buildEnglishTracks(upstream) : []
+      ? buildEnglishTracks(upstream, options) : []
 
     // Automatic prefetch is deliberately disabled in V2. With several AI candidates,
     // background translation would multiply Gemini usage before the user picks a source.

@@ -1,6 +1,6 @@
 {
   "name": "vueo-smartsubs",
-  "main": "src/vueo-worker.mjs",
+  "main": "src/cloudflare-worker.mjs",
   "compatibility_date": "2026-08-20",
   "compatibility_flags": [
     "nodejs_compat"
@@ -17,7 +17,7 @@
     "QUEUE_MOVIE_TARGET_CHUNKS": "10",
     "QUEUE_MOVIE_CHUNK_ITEMS_MIN": "160",
     "QUEUE_MOVIE_CHUNK_ITEMS_MAX": "200",
-    "SMARTSUBS_CACHE_VERSION": "vueo-v1",
+    "SMARTSUBS_CACHE_VERSION": "m8-v1",
     "SMARTSUBS_CACHE_TTL_MS": "15552000000",
     "TRANSLATION_CHUNK_ITEMS": "180",
     "TRANSLATION_CHUNK_CHARS": "24000",
@@ -50,19 +50,18 @@
     "PLAYER_QUEUE_WAIT_MAX_MS": "30000",
     "PLAYER_MOVIE_QUEUE_WAIT_MAX_MS": "33000",
     "PLAYER_QUEUE_GRACE_MS": "600",
-    "DELIVERY_RELAY_TTL_MS": "120000",
-    "VUEO_UPSTREAM_HOSTS": ""
+    "DELIVERY_RELAY_TTL_MS": "120000"
   },
   "kv_namespaces": [
     {
       "binding": "SMARTSUBS_CACHE",
-      "id": "REPLACED_BY_PROVISION_SCRIPT"
+      "id": "REPLACE_WITH_VUEO_SMARTSUBS_KV_ID"
     }
   ],
   "queues": {
     "producers": [
       {
-        "binding": "VUEO_TRANSLATION_QUEUE",
+        "binding": "SMARTSUBS_TRANSLATION_QUEUE",
         "queue": "vueo-smartsubs-translation"
       }
     ],
@@ -79,10 +78,10 @@
   },
   "ratelimits": [
     {
-      "name": "SMARTSUBS_SESSION_LIMITER",
+      "name": "SMARTSUBS_SUBTITLE_LIMITER",
       "namespace_id": "9283101",
       "simple": {
-        "limit": 10,
+        "limit": 120,
         "period": 60
       }
     },
@@ -98,16 +97,16 @@
   "durable_objects": {
     "bindings": [
       {
-        "name": "VUEO_JOBS",
-        "class_name": "VueoSmartSubsJob"
+        "name": "SMARTSUBS_DELIVERY",
+        "class_name": "TranslationDeliveryRelay"
       }
     ]
   },
   "migrations": [
     {
-      "tag": "vueo-smartsubs-jobs-v1",
+      "tag": "vueo-delivery-relay-v1",
       "new_sqlite_classes": [
-        "VueoSmartSubsJob"
+        "TranslationDeliveryRelay"
       ]
     }
   ]

@@ -24,12 +24,12 @@ function relayNamespace() {
   }
 }
 
-test('VUEO config binds a strongly consistent job store and preserves stable engine settings', () => {
+test('Part 4.3 config binds a strongly consistent delivery relay and preserves stable settings', () => {
   const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'))
-  const binding = config.durable_objects.bindings.find(item => item.name === 'VUEO_JOBS')
-  const migration = config.migrations.find(item => item.tag === 'vueo-smartsubs-jobs-v1')
-  assert.equal(binding.class_name, 'VueoSmartSubsJob')
-  assert.deepEqual(migration.new_sqlite_classes, ['VueoSmartSubsJob'])
+  const binding = config.durable_objects.bindings.find(item => item.name === 'SMARTSUBS_DELIVERY')
+  const migration = config.migrations.find(item => item.tag === 'vueo-delivery-relay-v1')
+  assert.equal(binding.class_name, 'TranslationDeliveryRelay')
+  assert.deepEqual(migration.new_sqlite_classes, ['TranslationDeliveryRelay'])
   assert.equal(config.vars.DELIVERY_RELAY_TTL_MS, '120000')
   assert.equal(config.vars.PLAYER_QUEUE_WAIT_MAX_MS, '30000')
   assert.equal(config.vars.PLAYER_QUEUE_GRACE_MS, '600')

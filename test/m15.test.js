@@ -151,7 +151,7 @@ test('M15 handler acknowledges success and retries transient failure', async () 
 test('M15 Wrangler config serializes translation queue consumer', () => {
   const config = JSON.parse(fs.readFileSync('wrangler.jsonc', 'utf8'))
   assert.deepEqual(config.queues.producers, [{
-    binding: 'VUEO_TRANSLATION_QUEUE',
+    binding: 'SMARTSUBS_TRANSLATION_QUEUE',
     queue: 'vueo-smartsubs-translation'
   }])
   assert.equal(config.queues.consumers[0].queue, 'vueo-smartsubs-translation')

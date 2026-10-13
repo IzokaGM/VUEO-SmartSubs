@@ -19,18 +19,18 @@ function memoryKv() {
 
 test('Nuvio diagnose build marker is exposed by production worker health', async () => {
   const { BUILD_ID, handleRequest } = await import('../src/cloudflare-worker.mjs')
-  assert.equal(BUILD_ID, 'v2-multicandidate-ondemand-11')
+  assert.equal(BUILD_ID, 'vueo-v2-upstream-1')
   const response = await handleRequest(new Request('https://smartsubs.example/health'), {
     SMARTSUBS_SECRET: 'server-secret-for-tests',
     SMARTSUBS_CACHE: memoryKv()
   })
   assert.equal(response.status, 200)
   const body = await response.json()
-  assert.equal(body.build, 'v2-multicandidate-ondemand-11')
+  assert.equal(body.build, 'vueo-v2-upstream-1')
   assert.equal(body.diagnose, true)
 })
 
-test('English-only OpenSubtitles result returns Malay Auto and built-in English without the external addon', async () => {
+test('VUEO English source returns on-demand Malay Auto and English without any upstream addon lookup', async () => {
   const { handleRequest } = await import('../src/cloudflare-worker.mjs')
   const secret = 'server-secret-for-tests'
   const token = createUserConfigToken('fake-gemini-key-12345678901234567890', {
@@ -54,7 +54,7 @@ test('English-only OpenSubtitles result returns Malay Auto and built-in English 
   try {
     const base = `https://smartsubs.example/c/${token}`
     const response = await handleRequest(
-      new Request(`${base}/subtitles/movie/tt1375666.json`),
+      new Request(`${base}/subtitles`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ media: { type: 'movie', id: 'tmdb:1375666' }, subtitles: [{ id: 'english-normal', lang: 'eng', text: '1\n00:00:01,000 --> 00:00:02,000\nHello' }] }) }),
       { SMARTSUBS_SECRET: secret, SMARTSUBS_CACHE: kv }
     )
     assert.equal(response.status, 200)
@@ -63,8 +63,8 @@ test('English-only OpenSubtitles result returns Malay Auto and built-in English 
     assert.equal(body.subtitles[0].lang, 'msa')
     assert.match(body.subtitles[0].url, /\/translated\/.+\.vtt$/)
     assert.equal(body.subtitles[1].lang, 'eng')
-    assert.equal(body.subtitles[1].id, 'opensubtitles-eng-english-normal')
-    assert.equal(body.subtitles[1].url, 'https://example.test/subtitle-en.srt')
+    assert.match(body.subtitles[1].id, /^vueo-eng-[a-f0-9]{64}$/)
+    assert.match(body.subtitles[1].url, /\/source\/[a-f0-9]{64}$/)
 
     const diagnose = await handleRequest(new Request(`${base}/diagnose`), {
       SMARTSUBS_SECRET: secret,

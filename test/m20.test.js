@@ -231,9 +231,9 @@ test('M20 Wrangler final config is quota-safe and public-ready', () => {
 
   assert.deepEqual(config.ratelimits, [
     {
-      name: 'SMARTSUBS_SESSION_LIMITER',
+      name: 'SMARTSUBS_SUBTITLE_LIMITER',
       namespace_id: '9283101',
-      simple: { limit: 10, period: 60 }
+      simple: { limit: 120, period: 60 }
     },
     {
       name: 'SMARTSUBS_GENERATE_LIMITER',

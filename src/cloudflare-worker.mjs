@@ -8,6 +8,7 @@ import configureModule from './configure.js'
 import perfModule from './perf.js'
 import diagnosticsModule from './diagnostics.js'
 import { CloudflareTranslationCache, cfGetOrTranslate, makeCacheKey } from './cf-cache.mjs'
+import { readVueoJson, prepareVueoSources, vueoUpstreamOptions, VueoInputError } from './vueo-upstream.mjs'
 import { createKvUsageTracker, trackedEnvironment } from './kv-usage.mjs'
 import { monitorStub, publishKvUsage, storeMonitorReport, readMonitorReports, pruneMonitorReports, renderKvMonitor, startMonitorTest, endMonitorTest, readMonitorTestState, pruneMonitorTestHistory } from './kv-monitor.mjs'
 
@@ -19,7 +20,7 @@ const { buildConfiguredUrls, validateGeminiApiKey, renderConfigurePage, escapeHt
 const { nowMs, roundMs, logPerf } = perfModule
 const { recordDiagnostic, readDiagnostics, deriveVerdict, sanitiseEvent } = diagnosticsModule
 
-const BUILD_ID = 'v2-multicandidate-ondemand-11'
+const BUILD_ID = 'vueo-v2-upstream-1'
 const caches = new WeakMap()
 // Per-request memoization only. No cross-request stale state when the owner switches OFF.
 const diagnosticStateByEnv = new WeakMap()
@@ -803,7 +804,8 @@ async function prefetchTranslation(options = {}) {
       sourceId: tokenData.cacheId,
       model: userConfig.model,
       apiKey: userConfig.apiKey,
-      cacheVersion: cacheVersion(env)
+      cacheVersion: cacheVersion(env),
+      translateOptions: vueoUpstreamOptions(env, tokenData.url)
     })
     const totalMs = roundMs(nowMs() - startedAt)
     const repair = result.translationStats || {}
@@ -1636,7 +1638,7 @@ async function processQueueMessage(body, env, options = {}) {
       model: userConfig.model,
       apiKey: userConfig.apiKey,
       cacheVersion: cacheVersion(env),
-      translateOptions: queueProfile,
+      translateOptions: { ...queueProfile, ...vueoUpstreamOptions(env, tokenData.url) },
       translateContext: {
         mediaType: tokenData.media?.type,
         movieAdaptiveChunking: tokenData.media?.type === 'movie' && queueProfileName !== 'fallback-stable',
@@ -1909,6 +1911,41 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
 
   const configId = tokenFingerprint(token)
   env.__kvUsageTracker?.setConfigId(configId)
+
+  if (request.method === 'POST' && suffix === '/subtitles') {
+    if (!await rateLimitAllowed(env.SMARTSUBS_SUBTITLE_LIMITER, `subtitle:${configId}`)) return rateLimitedResponse('subtitle')
+    try {
+      const input = await readVueoJson(request)
+      const prepared = await prepareVueoSources(input, env, configId)
+      const result = await handleSubtitles(prepared.media, {
+        upstreamSubtitles: prepared.tracks,
+        apiKey: userConfig.apiKey, model: userConfig.model,
+        includeEnglishTracks: true,
+        publicBaseUrl: configuredBase(request, token), tokenSecret: secret,
+        media: prepared.media,
+        onDiagnostic: event => recordConfiguredDiagnostic(env, configId, event)
+      })
+      result.subtitles = result.subtitles.map(track => ({ ...track,
+        url: track.url.startsWith('https://vueo-source.invalid/')
+          ? `${configuredBase(request, token)}/source/${track.url.split('/').pop()}` : track.url
+      }))
+      return json(result, 200, { noStore: true })
+    } catch (error) {
+      return json({ error: error instanceof VueoInputError ? error.message : 'VUEO upstream preparation failed' }, error instanceof VueoInputError ? 400 : 503, { noStore: true })
+    }
+  }
+  const sourceMatch = request.method === 'GET' && suffix.match(/^\/source\/([a-f0-9]{64})$/)
+  if (sourceMatch) {
+    if (!await rateLimitAllowed(env.SMARTSUBS_SUBTITLE_LIMITER, `subtitle:${configId}`)) return rateLimitedResponse('subtitle')
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 15000)
+    try {
+      const sourceUrl = `https://vueo-source.invalid/${sourceMatch[1]}`
+      return await vueoUpstreamOptions(env, sourceUrl, fetch, configId).fetchImpl(sourceUrl, { signal: controller.signal })
+    } catch {
+      return send(422, 'text/plain; charset=utf-8', 'VUEO source unavailable; resend from VUEO', { noStore: true })
+    } finally { clearTimeout(timer) }
+  }
 
   if (request.method === 'GET' && suffix === '/manifest.json') {
     return json(createConfiguredManifest(), 200, { noStore: true })
@@ -2204,7 +2241,8 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
             sourceId: tokenData.cacheId,
             model: userConfig.model,
             apiKey: userConfig.apiKey,
-            cacheVersion: cacheVersion(env)
+            cacheVersion: cacheVersion(env),
+            translateOptions: vueoUpstreamOptions(env, tokenData.url)
           })
         }
       }
@@ -2297,15 +2335,7 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
         type: args.type,
         id: args.id
       }).catch(() => {})
-      const result = await handleSubtitles(args, {
-        apiKey: userConfig.apiKey,
-        model: userConfig.model,
-        includeEnglishTracks: true,
-        publicBaseUrl: configuredBase(request, token),
-        tokenSecret: secret,
-        media: { type: args.type, id: args.id },
-        onDiagnostic: event => recordConfiguredDiagnostic(env, configId, event)
-      })
+      const result = { subtitles: [], cacheMaxAge: 60 }
 
       const aiCandidateCount = Number(result?.aiCandidateCount || 0)
       if (aiCandidateCount > 0) {
@@ -2371,6 +2401,28 @@ async function handleRequest(request, env, executionCtx = null) {
       secretReady: Boolean(serverSecret(env)),
       model: geminiModel(env)
     }), { noStore: true, csp: true })
+  }
+
+  if (request.method === 'POST' && (url.pathname === '/v1/session' ||
+      (url.pathname === '/configure' && request.headers.get('content-type')?.toLowerCase().startsWith('application/json')))) {
+    let apiKey = ''
+    try {
+      const secret = serverSecret(env)
+      if (!secret) return json({ error: 'SMARTSUBS_SECRET is not configured' }, 503, { noStore: true })
+      if (!await rateLimitAllowed(env.SMARTSUBS_SUBTITLE_LIMITER, `configure:${request.headers.get('cf-connecting-ip') || 'unknown'}`)) return rateLimitedResponse('subtitle')
+      const input = await readVueoJson(request)
+      apiKey = String(input.geminiApiKey || '').trim()
+      if (apiKey.length < 20 || apiKey.length > 256 || /[\r\n\0]/.test(apiKey)) throw new VueoInputError('Invalid Gemini API key format')
+      await validateGeminiApiKey(apiKey, { model: geminiModel(env) })
+      const token = createUserConfigToken(apiKey, { secret, model: geminiModel(env) })
+      return json({ token, model: geminiModel(env),
+        configuredBaseUrl: configuredBase(request, token),
+        // Compatibility with the already supplied VUEO settings screen: local renewal hint only.
+        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
+      }, 201, { noStore: true })
+    } catch (error) {
+      return json({ error: error instanceof VueoInputError ? error.message : 'Gemini key/model validation failed; check key, access and quota' }, error instanceof VueoInputError ? 400 : 422, { noStore: true })
+    }
   }
 
   if (request.method === 'POST' && url.pathname === '/configure') {

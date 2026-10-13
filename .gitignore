@@ -1,5 +1,5 @@
 node_modules/
+.cf-build/
 .wrangler/
-wrangler.generated.json
+.env
 .dev.vars
-*.zip

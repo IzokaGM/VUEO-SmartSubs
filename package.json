@@ -2,11 +2,10 @@
   "name": "vueo-smartsubs",
   "version": "1.0.0",
   "private": true,
-  "description": "VUEO remote English-to-Malay subtitle translation backend; user-owned Gemini API keys",
+  "description": "VUEO provider upstream adapter on the supplied SmartSubsV2 engine",
   "scripts": {
     "test": "node --test test/*.test.js",
-    "check": "node scripts/check.mjs",
-    "deploy": "node scripts/provision.mjs && wrangler deploy --config wrangler.generated.json"
+    "check": "node --check src/*.js && node --check src/cloudflare-worker.mjs && node --check src/cf-cache.mjs && node --check src/kv-usage.mjs && node --check src/kv-monitor.mjs"
   },
   "devDependencies": {
     "wrangler": "4.123.0"
