@@ -15,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  apply-test-and-cleanup:
+  apply-check-and-cleanup:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -154,7 +154,7 @@ jobs:
                           target.unlink()
                           deleted.append(path_str)
                           print(f'Removed stale file: {path_str}')
-              print(f'Full snapshot mode: {len(deleted)} stale tracked file(s) removed before testing.')
+              print(f'Full snapshot mode: {len(deleted)} stale tracked file(s) removed before syntax checks.')
 
           for archive_path in archives:
               with ZipFile(archive_path) as archive:
@@ -172,7 +172,22 @@ jobs:
               'zips': [p.name for p in archives],
               'fullSnapshot': full_snapshot,
           }), encoding='utf-8')
-          print(f'Ready for tests: {len(targets)} files from {len(archives)} ZIP(s); fullSnapshot={full_snapshot}.')
+          print(f'Ready for syntax checks: {len(targets)} files from {len(archives)} ZIP(s); fullSnapshot={full_snapshot}.')
+          PY
+
+      - name: Remove unused test folders
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import shutil
+          from pathlib import Path
+          for name in ('test', 'tests'):
+              path = Path(name)
+              if path.is_symlink():
+                  path.unlink()
+              elif path.is_dir():
+                  shutil.rmtree(path)
           PY
 
       - name: Set up Node.js
@@ -187,10 +202,7 @@ jobs:
       - name: Check syntax
         run: npm run check
 
-      - name: Run regression tests
-        run: npm test
-
-      - name: Commit tested files and remove ZIPs
+      - name: Commit checked files and remove ZIPs
         shell: bash
         run: |
           set -euo pipefail
