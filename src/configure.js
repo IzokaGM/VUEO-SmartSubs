@@ -18,11 +18,13 @@ function buildConfiguredUrls(base, token) {
 }
 
 class GeminiValidationError extends Error {
-  constructor(code, message, upstreamStatus = null) {
+  constructor(code, message, upstreamStatus = null, detail = '', apiStatus = '') {
     super(message)
     this.name = 'GeminiValidationError'
     this.code = code
     this.upstreamStatus = upstreamStatus
+    this.detail = detail
+    this.apiStatus = apiStatus
   }
 }
 
@@ -59,6 +61,14 @@ async function validateGeminiApiKey(apiKey, options = {}) {
     const invalidKey = reasons.includes('API_KEY_INVALID') ||
       /API key not valid|invalid API key/i.test(String(payload?.error?.message || ''))
     const status = response.status
+    const apiStatus = /^[A-Z_]{1,64}$/.test(String(payload?.error?.status || '')) ? payload.error.status : ''
+    // Return only the explanatory message, never details/metadata/request bodies.
+    const detail = String(payload?.error?.message || '')
+      .split(key).join('[redacted]')
+      .replace(/AIza[A-Za-z0-9_-]+/g, '[redacted]')
+      .replace(/https?:\/\/\S+/gi, '[URL redacted]')
+      .replace(/[\u0000-\u001f\u007f]/g, ' ')
+      .replace(/\s+/g, ' ').trim().slice(0, 300)
     let code = 'GEMINI_REQUEST_REJECTED'
     let message = 'Gemini rejected the validation request. Check the configured model.'
     if (invalidKey || status === 401) {
@@ -69,10 +79,16 @@ async function validateGeminiApiKey(apiKey, options = {}) {
       code = 'GEMINI_MODEL_UNAVAILABLE'; message = 'The configured Gemini model is unavailable for this key or API version.'
     } else if (status === 429) {
       code = 'GEMINI_QUOTA_EXCEEDED'; message = 'Gemini quota or rate limit reached. Check quota or try again later.'
+    } else if (status === 402) {
+      code = 'GEMINI_BILLING_REQUIRED'; message = 'Gemini reports a billing or credit issue.'
+    } else if (status === 400 && apiStatus === 'FAILED_PRECONDITION') {
+      code = 'GEMINI_PRECONDITION_FAILED'; message = 'Gemini reports an unmet account or service prerequisite.'
+    } else if (status === 400 && apiStatus === 'INVALID_ARGUMENT') {
+      code = 'GEMINI_INVALID_ARGUMENT'; message = 'Gemini rejected a validation request parameter.'
     } else if (status >= 500) {
       code = 'GEMINI_SERVICE_UNAVAILABLE'; message = 'Gemini is temporarily unavailable. Try again later.'
     }
-    throw new GeminiValidationError(code, message, status)
+    throw new GeminiValidationError(code, message, status, detail, apiStatus)
   }
   return true
 }

@@ -20,7 +20,7 @@ const { buildConfiguredUrls, validateGeminiApiKey, GeminiValidationError, render
 const { nowMs, roundMs, logPerf } = perfModule
 const { recordDiagnostic, readDiagnostics, deriveVerdict, sanitiseEvent } = diagnosticsModule
 
-const BUILD_ID = 'vueo-v2-upstream-validation-2'
+const BUILD_ID = 'vueo-v2-upstream-validation-3'
 const caches = new WeakMap()
 // Per-request memoization only. No cross-request stale state when the owner switches OFF.
 const diagnosticStateByEnv = new WeakMap()
@@ -2423,7 +2423,8 @@ async function handleRequest(request, env, executionCtx = null) {
     } catch (error) {
       if (error instanceof GeminiValidationError) {
         return json({ error: error.message, errorCode: error.code,
-          upstreamStatus: error.upstreamStatus, model: geminiModel(env) }, 422, { noStore: true })
+          upstreamStatus: error.upstreamStatus, upstreamApiStatus: error.apiStatus,
+          errorDetail: error.detail, model: geminiModel(env) }, 422, { noStore: true })
       }
       return json({ error: error instanceof VueoInputError ? error.message : 'SmartSubs could not create a session. Try again later.',
         errorCode: error instanceof VueoInputError ? 'INVALID_INPUT' : 'SMARTSUBS_SESSION_ERROR' },
