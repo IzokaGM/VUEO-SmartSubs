@@ -16,11 +16,11 @@ const { createConfiguredManifest } = configuredManifestModule
 const { handleSubtitles } = subtitlesModule
 const { decodeTranslationTokenData } = tokenModule
 const { createUserConfigToken, decodeUserConfigToken, tokenFingerprint } = userConfigModule
-const { buildConfiguredUrls, validateGeminiApiKey, renderConfigurePage, escapeHtml } = configureModule
+const { buildConfiguredUrls, validateGeminiApiKey, GeminiValidationError, renderConfigurePage, escapeHtml } = configureModule
 const { nowMs, roundMs, logPerf } = perfModule
 const { recordDiagnostic, readDiagnostics, deriveVerdict, sanitiseEvent } = diagnosticsModule
 
-const BUILD_ID = 'vueo-v2-upstream-1'
+const BUILD_ID = 'vueo-v2-upstream-validation-2'
 const caches = new WeakMap()
 // Per-request memoization only. No cross-request stale state when the owner switches OFF.
 const diagnosticStateByEnv = new WeakMap()
@@ -2421,7 +2421,13 @@ async function handleRequest(request, env, executionCtx = null) {
         expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000
       }, 201, { noStore: true })
     } catch (error) {
-      return json({ error: error instanceof VueoInputError ? error.message : 'Gemini key/model validation failed; check key, access and quota' }, error instanceof VueoInputError ? 400 : 422, { noStore: true })
+      if (error instanceof GeminiValidationError) {
+        return json({ error: error.message, errorCode: error.code,
+          upstreamStatus: error.upstreamStatus, model: geminiModel(env) }, 422, { noStore: true })
+      }
+      return json({ error: error instanceof VueoInputError ? error.message : 'SmartSubs could not create a session. Try again later.',
+        errorCode: error instanceof VueoInputError ? 'INVALID_INPUT' : 'SMARTSUBS_SESSION_ERROR' },
+      error instanceof VueoInputError ? 400 : 500, { noStore: true })
     }
   }
 
