@@ -1,1 +1,145 @@
+name: VUEO-SmartSubs
 
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.zip'
+      - 'src/**'
+      - 'test/**'
+      - 'scripts/**'
+      - 'package*.json'
+      - 'wrangler.jsonc'
+      - 'ENGINE_BASELINE.json'
+      - '.github/workflows/vueo-smartsubs.yml'
+  workflow_dispatch:
+    inputs:
+      zip_file:
+        description: 'ZIP path, if more than one ZIP exists'
+        required: false
+        type: string
+      deploy:
+        description: 'Deploy the tested backend to Cloudflare'
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vueo-smartsubs-main
+  cancel-in-progress: false
+
+jobs:
+  apply-check-test:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.event.head_commit.message, '[vueo-zip-applied]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 2
+
+      - name: Apply one ZIP using repository-root paths
+        id: apply
+        env:
+          ZIP_FILE: ${{ inputs.zip_file }}
+        shell: bash
+        run: |
+          python3 <<'PY'
+          import os, stat, shutil, tempfile, zipfile
+          from pathlib import Path, PurePosixPath
+          root = Path.cwd().resolve()
+          selected = os.environ.get('ZIP_FILE', '').strip()
+          candidates = [Path(selected)] if selected else list(root.glob('*.zip'))
+          if not candidates:
+              print('No ZIP to apply; checking existing project.')
+              with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+                  output.write('applied=false\n')
+              raise SystemExit(0)
+          if len(candidates) != 1:
+              raise SystemExit('Select one ZIP with the zip_file workflow input.')
+          archive_path = candidates[0]
+          if not archive_path.is_absolute(): archive_path = root / archive_path
+          if archive_path.is_symlink() or not archive_path.resolve().is_relative_to(root):
+              raise SystemExit('ZIP must be a regular file inside the repository.')
+          with tempfile.TemporaryDirectory() as tmp, zipfile.ZipFile(archive_path) as archive:
+              entries = archive.infolist()
+              if not entries or len(entries) > 5000 or sum(item.file_size for item in entries) > 100 * 1024 * 1024:
+                  raise SystemExit('ZIP is empty or exceeds project limits.')
+              names = set()
+              for entry in entries:
+                  name = entry.filename.replace('\\', '/')
+                  path = PurePosixPath(name)
+                  if path.is_absolute() or '..' in path.parts or '.git' in path.parts or '.github' in path.parts:
+                      raise SystemExit('ZIP cannot write outside root or modify git/workflows.')
+                  if name in names: raise SystemExit('Duplicate ZIP path.')
+                  names.add(name)
+                  if stat.S_ISLNK(entry.external_attr >> 16): raise SystemExit('ZIP cannot contain symlinks.')
+              archive.extractall(tmp)
+              source = Path(tmp)
+              top = list(source.iterdir())
+              if len(top) == 1 and top[0].is_dir() and (top[0] / 'package.json').is_file(): source = top[0]
+              if not (source / 'package.json').is_file() or not (source / 'src/vueo-worker.mjs').is_file():
+                  raise SystemExit('ZIP must contain the VUEO-SmartSubs project at its root.')
+              files = [path for path in source.rglob('*') if path.is_file()]
+              for path in files:
+                  destination = root / path.relative_to(source)
+                  if destination == archive_path or not destination.resolve().is_relative_to(root):
+                      raise SystemExit('ZIP destination is outside root or overwrites itself.')
+                  for parent in [destination, *destination.parents]:
+                      if parent == root: break
+                      if parent.is_symlink(): raise SystemExit('Destination contains a symlink.')
+                      if parent != destination and parent.exists() and not parent.is_dir():
+                          raise SystemExit('Destination parent is not a directory.')
+                  if destination.exists() and not destination.is_file(): raise SystemExit('Destination is not a file.')
+              for path in files:
+                  destination = root / path.relative_to(source)
+                  destination.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copy2(path, destination)
+          archive_path.unlink()
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write('applied=true\n')
+          print('Project extracted to repository root.')
+          PY
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Check syntax and run all tests
+        run: |
+          npm run check
+          npm test
+
+      - name: Commit tested ZIP contents
+        if: steps.apply.outputs.applied == 'true'
+        run: |
+          git add -A
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'chore: apply tested VUEO-SmartSubs ZIP [vueo-zip-applied]'
+          git push origin HEAD:main
+
+      - name: Provision isolated resources and deploy
+        if: github.event_name == 'workflow_dispatch' && inputs.deploy == true
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          VUEO_SMARTSUBS_SECRET: ${{ secrets.VUEO_SMARTSUBS_SECRET }}
+        run: |
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$CLOUDFLARE_API_TOKEN" ] || [ "${#VUEO_SMARTSUBS_SECRET}" -lt 32 ]; then
+            echo 'Set Cloudflare account/token and a backend secret of at least 32 characters.'
+            exit 1
+          fi
+          node scripts/provision.mjs
+          npx wrangler deploy --config wrangler.generated.json
+          printf '%s' "$VUEO_SMARTSUBS_SECRET" | npx wrangler secret put VUEO_SMARTSUBS_SECRET --config wrangler.generated.json
