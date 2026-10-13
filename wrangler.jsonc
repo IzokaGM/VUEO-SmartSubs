@@ -55,7 +55,7 @@
   "kv_namespaces": [
     {
       "binding": "SMARTSUBS_CACHE",
-      "id": "REPLACE_WITH_VUEO_SMARTSUBS_KV_ID"
+      "id": "622fac3d42794f1d972cc77a4243871b"
     }
   ],
   "queues": {
