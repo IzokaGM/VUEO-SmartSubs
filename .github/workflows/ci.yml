@@ -1,32 +1,48 @@
 name: VUEO SmartSubs - CI
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'src/**'
-      - 'scripts/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'wrangler.jsonc'
-      - '.github/workflows/ci.yml'
-  pull_request:
   workflow_dispatch:
+  workflow_run:
+    workflows:
+      - VUEO SmartSubs - Apply ZIP Patch
+    types:
+      - completed
+    branches:
+      - main
 
 permissions:
   contents: read
 
 concurrency:
-  group: vueo-smartsubs-ci-${{ github.ref }}
+  group: vueo-smartsubs-ci-${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
   cancel-in-progress: true
 
 jobs:
   validate:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
+      - name: Checkout updated main
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && 'main' || github.ref }}
+
+      - name: Verify patch ZIPs were removed
+        if: github.event_name == 'workflow_run'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          patches=(./*.zip)
+          if (( ${#patches[@]} > 0 )); then
+            printf 'Unprocessed ZIP still in repository root: %s\n' "${patches[@]}" >&2
+            exit 1
+          fi
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -36,6 +52,14 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Verify repository
+        run: |
+          test -f package.json
+          test -f src/cloudflare-worker.mjs
+          test -f wrangler.jsonc
+          test ! -f src/subsource.js
+          test ! -f src/subsource-archive.js
 
       - name: Check syntax
         run: npm run check
