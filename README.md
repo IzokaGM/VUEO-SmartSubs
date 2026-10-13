@@ -1,6 +1,6 @@
 # VUEO-SmartSubs — corrected V2-based backend
 
-This replaces the earlier redesigned VUEO-SmartSubs ZIP. Based directly on **SmartSubsV2-main (4).zip**.
+This replaces the earlier redesigned VUEO-SmartSubs ZIP. Based directly on **SmartSubsV2-main (4).zip**. 
 
 ## Scope 
 
