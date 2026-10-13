@@ -2,7 +2,7 @@
 
 This replaces the earlier redesigned VUEO-SmartSubs ZIP. Based directly on **SmartSubsV2-main (4).zip**.
 
-## Scope
+## Scope 
 
 - OpenSubtitles discovery is replaced by subtitle tracks supplied by VUEO plugins.
 - Each user enters their Gemini key in VUEO → Enhancements → Gemini. The backend still uses V2's existing encrypted BYOK config token.
