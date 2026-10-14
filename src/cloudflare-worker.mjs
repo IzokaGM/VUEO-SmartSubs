@@ -9,20 +9,20 @@ import geminiDiagnosticsModule from './gemini-diagnostics.js'
 import perfModule from './perf.js'
 import diagnosticsModule from './diagnostics.js'
 import { CloudflareTranslationCache, cfGetOrTranslate, makeCacheKey } from './cf-cache.mjs'
-import { readVueoJson, prepareVueoSources, vueoUpstreamOptions, VueoInputError } from './vueo-upstream.mjs'
+import { readVueoJson, prepareVueoSources, vueoUpstreamOptions, canonicalVueoTranslationSource, VueoInputError } from './vueo-upstream.mjs'
 import { createKvUsageTracker, trackedEnvironment } from './kv-usage.mjs'
 import { monitorStub, publishKvUsage, storeMonitorReport, readMonitorReports, pruneMonitorReports, renderKvMonitor, startMonitorTest, endMonitorTest, readMonitorTestState, pruneMonitorTestHistory } from './kv-monitor.mjs'
 
 const { createConfiguredManifest } = configuredManifestModule
 const { handleSubtitles } = subtitlesModule
-const { decodeTranslationTokenData } = tokenModule
+const { decodeTranslationTokenData, createTranslationToken } = tokenModule
 const { createUserConfigToken, decodeUserConfigToken, tokenFingerprint } = userConfigModule
 const { buildConfiguredUrls, validateGeminiApiKey, GeminiValidationError, renderConfigurePage, escapeHtml } = configureModule
 const { nowMs, roundMs, logPerf } = perfModule
 const { recordDiagnostic, readDiagnostics, deriveVerdict, sanitiseEvent } = diagnosticsModule
 
 const { geminiRequestContext, renderGeminiDiagnostics } = geminiDiagnosticsModule
-const BUILD_ID = 'vueo-v2-upstream-location-diagnostics-4'
+const BUILD_ID = 'vueo-content-cache-5'
 const caches = new WeakMap()
 // Per-request memoization only. No cross-request stale state when the owner switches OFF.
 const diagnosticStateByEnv = new WeakMap()
@@ -2068,8 +2068,14 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
     try {
       if (!env.SMARTSUBS_CACHE) throw new Error('SMARTSUBS_CACHE KV binding is not configured')
 
-      const tokenData = decodeTranslationTokenData(translationMatch[1], secret)
+      const originalTokenData = decodeTranslationTokenData(translationMatch[1], secret)
+      const tokenData = await canonicalVueoTranslationSource(originalTokenData, env, configId)
       selectedSourceId = tokenData.sourceId
+      const canonicalAutoUrl = new URL(request.url)
+      canonicalAutoUrl.pathname = canonicalAutoUrl.pathname.replace(
+        /\/translated\/[^/]+\.vtt$/,
+        '/translated/' + createTranslationToken(tokenData.url, secret, tokenData.sourceId, tokenData.media) + '.vtt'
+      )
       await recordConfiguredDiagnostic(env, configId, {
         event: 'translation-request',
         status: 'player',
@@ -2169,7 +2175,7 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
         }
 
         const queued = await enqueuePrefetchTranslation({
-          autoUrl: request.url,
+          autoUrl: canonicalAutoUrl.toString(),
           env,
           configToken: token,
           configId,

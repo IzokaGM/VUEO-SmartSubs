@@ -123,3 +123,37 @@ export function vueoUpstreamOptions(env, upstreamUrl, fetchImpl = fetch, configI
     return new Response(text, { headers: { 'content-type': /^\uFEFF?WEBVTT/.test(text) ? 'text/vtt; charset=utf-8' : 'application/x-subrip; charset=utf-8', 'cache-control': 'private, no-store' } })
   } }
 }
+
+/** Resolve the selected source before cache/job lookup. Transport credentials
+ * are not subtitle identity; retain all cue times and text in the digest.
+ * Only the selected track is downloaded, never every listed AI candidate.
+ */
+export async function canonicalVueoTranslationSource(tokenData, env, configId, fetchImpl = fetch) {
+  if (!String(tokenData.url).startsWith(SOURCE_BASE)) return tokenData
+  const sourceId = String(tokenData.url).slice(SOURCE_BASE.length)
+  if (!/^[a-f0-9]{64}$/.test(sourceId)) throw new Error('Invalid VUEO subtitle source')
+  const stored = await env.SMARTSUBS_CACHE.get(SOURCE_PREFIX + sourceId)
+  if (!stored) throw new Error('VUEO subtitle source expired; send it again from VUEO')
+  const decoded = userConfig.decodeUserConfigToken(stored, { secret: sourceSecret(env) })
+  if (decoded.model !== 'vueo-source-v1') throw new Error('Invalid VUEO subtitle source')
+  const source = JSON.parse(decoded.apiKey)
+  if (!configId || source.owner !== configId) throw new Error('VUEO source does not belong to this configuration')
+  const text = (typeof source.text === 'string' ? source.text : await download(source, fetchImpl, AbortSignal.timeout(30_000)))
+    .replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n')
+  if (!text.trim() || !text.includes('-->') || Buffer.byteLength(text) > MAX_BYTES) {
+    throw new Error('Invalid VUEO subtitle content')
+  }
+  const id = createHash('sha256').update(JSON.stringify({
+    version: 'vueo-content-v1', owner: configId, media: tokenData.media,
+    lang: source.lang, text
+  })).digest('hex')
+  // Freeze exact input for Queue/direct translation, so the bytes hashed here
+  // are also the bytes translated even if the provider URL later changes.
+  const frozen = userConfig.createUserConfigToken(JSON.stringify({
+    owner: configId, lang: source.lang, text
+  }), { secret: sourceSecret(env), model: 'vueo-source-v1' })
+  await env.SMARTSUBS_CACHE.put(SOURCE_PREFIX + id, frozen, {
+    expirationTtl: Math.max(60, Math.floor(Number(env.SMARTSUBS_CACHE_TTL_MS || 15552000000) / 1000))
+  })
+  return { ...tokenData, url: SOURCE_BASE + id, sourceId: id, cacheId: id }
+}

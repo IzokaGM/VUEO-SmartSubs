@@ -1,0 +1,24 @@
+VUEO SmartSubs content cache patch
+Apply ONLY to VUEO-SmartSubs repository root. Not SmartSubs or SmartSubsV2.
+No YML or wrangler bindings included; existing placement/bindings remain.
+
+Resolve only the selected subtitle to text on the Worker before cache/job lookup.
+Use exact text and cue timing as identity; normalize BOM and newline encoding only.
+URL tokens, headers and URL-versus-text transport no longer change translation identity.
+Cache remains scoped to configuration owner and episode, model and cache processing
+version. Target language remains the existing Malay-only engine. No app hashing.
+Freeze the resolved text so Queue and direct fallback translate exactly the hashed
+input. Both use the same content cache key. Downloads have a 30-second deadline.
+Existing Queue, chunking, relay and translation engine are retained.
+
+First selection after this patch may translate once: old transport-based entries
+cannot safely be identified as matching content. Later identical subtitle inputs
+reuse persistent cache within its TTL, even when provider credentials change.
+Source download is still needed to identify content; Gemini is skipped on cache hit.
+Changed subtitle timing/content, configuration, model or processing version misses
+cache intentionally. No provider-result cache is cleared.
+
+Build: vueo-content-cache-5.
+Validation: npm run check and 16 node tests pass, including persistent cache reuse
+without Gemini/Queue and a Queue/player canonical-token cache-key integration test.
+Live Cloudflare deployment and actual device playback have not been tested here.
