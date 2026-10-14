@@ -1,13 +1,18 @@
-Apply ONLY to VUEO-SmartSubs repository root. No YML or wrangler changes.
-Page title and heading: VUEO x SmartSubs, without Diagnose or dash.
-English source overview card: original provider subtitle ID instead of hash,
-actual provider name instead of OpenSubtitles.
-Source hashing, cache keys, Queue and translation behavior remain unchanged.
-Provider metadata is explicitly excluded from transport and content identity.
-Full hash remains in existing technical logs and other unchanged diagnostic fields.
-The source metadata is captured on new translation-request events. Old logs or app
-versions without metadata display Not available / Provider not available honestly.
-Update the matching app patch, reopen episode and select Malay AI for new events.
-Retains earlier content-cache and Gemini diagnostics fixes.
-Validation: npm run check and all 19 tests pass, including cache identity invariance,
-source metadata propagation and escaped overview rendering. Not live-deployed here.
+V2 source display repair, apply each ZIP to its own repository root.
+App ZIP: VUEO app. Worker ZIP: VUEO-SmartSubs ONLY. No YML or binding changes.
+
+Hero Source now shows original provider subtitle ID and provider name.
+App sends display metadata on the listing POST and selected translation GET.
+Worker accepts bounded encoded display headers to supplement older source records.
+Those fields are display-only and never participate in cache/source identity.
+Cached translations, Queue and translation engine remain unchanged.
+Prior plugin-only input filter, player-facing labels and source display ID are retained.
+
+After both updates, reopen episode and select Malay AI for a fresh diagnostics event.
+Old event rows are not rewritten; no translation-cache clearing is required.
+Existing source metadata is still a fallback for clients without display headers.
+
+Validation: npm run check, 21 Node tests pass, including complete POST -> cached GET
+-> persistent diagnostic event -> overview/hero display and legacy-source missing-name
+recovery. Actual Android build/device and live Cloudflare deployment not tested here.
+The exact cause in the user's live installation is not yet proven by its JSON export.

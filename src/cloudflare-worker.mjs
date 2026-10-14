@@ -22,7 +22,7 @@ const { nowMs, roundMs, logPerf } = perfModule
 const { recordDiagnostic, readDiagnostics, deriveVerdict, sanitiseEvent } = diagnosticsModule
 
 const { geminiRequestContext, renderGeminiDiagnostics } = geminiDiagnosticsModule
-const BUILD_ID = 'vueo-source-display-6'
+const BUILD_ID = 'vueo-source-display-7'
 const caches = new WeakMap()
 // Per-request memoization only. No cross-request stale state when the owner switches OFF.
 const diagnosticStateByEnv = new WeakMap()
@@ -695,7 +695,7 @@ function renderConfiguredDiagnosePage(configId, events, control = { enabled: tru
   const heroMeta = latestPlayerSelection && sourceSelected
     ? `Latest AI selection: ${formatMalaysiaTime(latestPlayerSelection.ts)}`
     : `Latest subtitle request: ${lastSubtitle ? formatMalaysiaTime(lastSubtitle.ts) : 'Not recorded'}`
-  const heroSourceMeta = latestPlayerSelection && sourceSelected ? `Source ${selectedId}` : ''
+  const heroSourceMeta = latestPlayerSelection && sourceSelected ? `Source ${displaySourceId}${sourceMetadata.providerName ? ' · ' + displayProviderName : ''}` : ''
 
   const guidance = activeFailure
     ? 'A recent failure was recorded. See the failure details and recent events below.' : ''
@@ -2075,6 +2075,18 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
       const originalTokenData = decodeTranslationTokenData(translationMatch[1], secret)
       const tokenData = await canonicalVueoTranslationSource(originalTokenData, env, configId)
       selectedSourceId = tokenData.sourceId
+      // Request display metadata supplements legacy source records. It never
+      // participates in source identity, cache keys, or translation input.
+      const requestDisplayText = (header, max) => {
+        const raw = request.headers.get(header) || ''
+        if (raw.length > max * 12) return ''
+        try {
+          const value = decodeURIComponent(raw.replace(/\+/g, ' ')).trim()
+          return value.length <= max && !/[\u0000-\u001f\u007f]/.test(value) ? value : ''
+        } catch { return '' }
+      }
+      const providerSubtitleId = requestDisplayText('X-Vueo-Subtitle-Id', 256) || tokenData.providerSubtitleId
+      const providerName = requestDisplayText('X-Vueo-Provider-Name', 160) || tokenData.providerName
       const canonicalAutoUrl = new URL(request.url)
       canonicalAutoUrl.pathname = canonicalAutoUrl.pathname.replace(
         /\/translated\/[^/]+\.vtt$/,
@@ -2084,8 +2096,8 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
         event: 'translation-request',
         status: 'player',
         sourceId: selectedSourceId,
-        providerSubtitleId: tokenData.providerSubtitleId,
-        providerName: tokenData.providerName,
+        providerSubtitleId,
+        providerName,
         ...translationRequestProbe(request)
       }).catch(() => {})
       env.__kvUsageTracker?.setMedia(tokenData.media)
