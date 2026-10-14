@@ -1,0 +1,13 @@
+VUEO SmartSubs — Singapore placement trial
+Base: uploaded VUEO-SmartSubs-main.zip plus diagnostics v2.
+Changes only wrangler.jsonc: placement.region = aws:ap-southeast-1.
+All previous variables, bindings, Queue configuration, model and cache settings remain unchanged.
+This hints web fetch execution near Singapore. It is not a fixed outbound IP guarantee and does not control Queue execution.
+
+Upload this ZIP to the VUEO-SmartSubs repository root. Apply via existing ZIP workflow and deploy through your existing Cloudflare workflow. No YML included.
+After deployment, open https://vueo-smartsubs.nusmart.workers.dev/diagnose/gemini and run both checks.
+If worker succeeds, retry Test Connection in VUEO. Confirm deployment succeeds and the placement setting is present in the active worker; this ZIP alone does not deploy it.
+Rollback: remove the three-line placement object from wrangler.jsonc and redeploy.
+
+Validation: parsed JSON and confirmed placement is the only configuration difference.
+No live Cloudflare deployment or Google API request performed here.
