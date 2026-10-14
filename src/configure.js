@@ -25,6 +25,8 @@ class GeminiValidationError extends Error {
     this.upstreamStatus = upstreamStatus
     this.detail = detail
     this.apiStatus = apiStatus
+    this.reason = code === 'GEMINI_PRECONDITION_FAILED' && /user location is not supported|location.*not supported|unsupported.*location/i.test(detail)
+      ? 'GEMINI_LOCATION_UNSUPPORTED' : code
   }
 }
 
@@ -82,7 +84,9 @@ async function validateGeminiApiKey(apiKey, options = {}) {
     } else if (status === 402) {
       code = 'GEMINI_BILLING_REQUIRED'; message = 'Gemini reports a billing or credit issue.'
     } else if (status === 400 && apiStatus === 'FAILED_PRECONDITION') {
-      code = 'GEMINI_PRECONDITION_FAILED'; message = 'Gemini reports an unmet account or service prerequisite.'
+      code = 'GEMINI_PRECONDITION_FAILED'; message = /user location is not supported|location.*not supported|unsupported.*location/i.test(detail)
+        ? 'Gemini rejected the location of this request. Compare Worker and browser diagnostics.'
+        : 'Gemini reports an unmet account or service prerequisite.'
     } else if (status === 400 && apiStatus === 'INVALID_ARGUMENT') {
       code = 'GEMINI_INVALID_ARGUMENT'; message = 'Gemini rejected a validation request parameter.'
     } else if (status >= 500) {

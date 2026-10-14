@@ -41,3 +41,7 @@ URL input accepts source headers. If a provider binds its URL to the device's IP
 ## Validation
 
 230 tests passed, including the inherited V2 suite and VUEO upstream/configuration/queue tests. Engine files and all runtime vars checked against the supplied V2 source. Live Cloudflare deployment, provider session access and live Gemini quota/model access have not been tested.
+
+
+### Gemini connection troubleshooting
+Open `/diagnose/gemini` to compare the Worker and browser paths with your own API key. One run uses two small Gemini requests. Read API.md for interpretation and privacy details. This diagnostic patch does not change placement or the V2 translation engine.

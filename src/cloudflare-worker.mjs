@@ -5,6 +5,7 @@ import subtitlesModule from './subtitles.js'
 import tokenModule from './token.js'
 import userConfigModule from './user-config.js'
 import configureModule from './configure.js'
+import geminiDiagnosticsModule from './gemini-diagnostics.js'
 import perfModule from './perf.js'
 import diagnosticsModule from './diagnostics.js'
 import { CloudflareTranslationCache, cfGetOrTranslate, makeCacheKey } from './cf-cache.mjs'
@@ -20,7 +21,8 @@ const { buildConfiguredUrls, validateGeminiApiKey, GeminiValidationError, render
 const { nowMs, roundMs, logPerf } = perfModule
 const { recordDiagnostic, readDiagnostics, deriveVerdict, sanitiseEvent } = diagnosticsModule
 
-const BUILD_ID = 'vueo-v2-upstream-validation-3'
+const { geminiRequestContext, renderGeminiDiagnostics } = geminiDiagnosticsModule
+const BUILD_ID = 'vueo-v2-upstream-location-diagnostics-4'
 const caches = new WeakMap()
 // Per-request memoization only. No cross-request stale state when the owner switches OFF.
 const diagnosticStateByEnv = new WeakMap()
@@ -387,7 +389,7 @@ async function readConfigureForm(request) {
 }
 
 function renderRootDiagnosePage() {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSubsV2 Diagnose</title><style>:root{color-scheme:dark}body{margin:0;background:#101116;color:#f4f4f5;font-family:system-ui,sans-serif}.wrap{max-width:720px;margin:auto;padding:28px 18px}.card{background:#181a21;border:1px solid #30333d;border-radius:16px;padding:20px}code{word-break:break-all;color:#c9ffdc}</style></head><body><main class="wrap"><section class="card"><h1>SmartSubsV2 Diagnose</h1><p>Build: <code>${BUILD_ID}</code></p><p>Open diagnose through your configured SmartSubs URL:</p><code>https://.../c/YOUR_CONFIG_TOKEN/diagnose</code><p>The config token is required so diagnostics stay isolated to that SmartSubs installation.</p></section></main></body></html>`
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>SmartSubsV2 Diagnose</title><style>:root{color-scheme:dark}body{margin:0;background:#101116;color:#f4f4f5;font-family:system-ui,sans-serif}.wrap{max-width:720px;margin:auto;padding:28px 18px}.card{background:#181a21;border:1px solid #30333d;border-radius:16px;padding:20px}code{word-break:break-all;color:#c9ffdc}</style></head><body><main class="wrap"><section class="card"><h1>SmartSubsV2 Diagnose</h1><p>Build: <code>${BUILD_ID}</code></p><p>Open diagnose through your configured SmartSubs URL:</p><code>https://.../c/YOUR_CONFIG_TOKEN/diagnose</code><p>The config token is required so diagnostics stay isolated to that SmartSubs installation.</p></section><p><a href="/diagnose/gemini">Gemini connection check</a></p></main></body></html>`
 }
 
 function formatMalaysiaTime(timestamp) {
@@ -2388,6 +2390,14 @@ async function handleRequest(request, env, executionCtx = null) {
     }, 200, { noStore: true, headers: { 'x-smartsubs-build': BUILD_ID } })
   }
 
+  if (request.method === 'GET' && url.pathname === '/diagnose/gemini') {
+    const page = renderGeminiDiagnostics(geminiModel(env))
+    const hash = createHash('sha256').update(page.script).digest('base64')
+    return send(200, 'text/html; charset=utf-8', page.html, { noStore: true, headers: {
+      'content-security-policy': `default-src 'none'; style-src 'unsafe-inline'; script-src 'sha256-${hash}'; connect-src 'self' https://generativelanguage.googleapis.com; form-action 'none'; base-uri 'none'; frame-ancestors 'none'`
+    } })
+  }
+
   if (request.method === 'GET' && url.pathname === '/diagnose') {
     return send(200, 'text/html; charset=utf-8', renderRootDiagnosePage(), { noStore: true, csp: true })
   }
@@ -2403,7 +2413,7 @@ async function handleRequest(request, env, executionCtx = null) {
     }), { noStore: true, csp: true })
   }
 
-  if (request.method === 'POST' && (url.pathname === '/v1/session' ||
+  if (request.method === 'POST' && (url.pathname === '/v1/session' || url.pathname === '/v1/gemini/diagnose' ||
       (url.pathname === '/configure' && request.headers.get('content-type')?.toLowerCase().startsWith('application/json')))) {
     let apiKey = ''
     try {
@@ -2414,6 +2424,9 @@ async function handleRequest(request, env, executionCtx = null) {
       apiKey = String(input.geminiApiKey || '').trim()
       if (apiKey.length < 20 || apiKey.length > 256 || /[\r\n\0]/.test(apiKey)) throw new VueoInputError('Invalid Gemini API key format')
       await validateGeminiApiKey(apiKey, { model: geminiModel(env) })
+      if (url.pathname === '/v1/gemini/diagnose') {
+        return json({ ok: true, model: geminiModel(env), requestContext: geminiRequestContext(request) }, 200, { noStore: true })
+      }
       const token = createUserConfigToken(apiKey, { secret, model: geminiModel(env) })
       return json({ token, model: geminiModel(env),
         configuredBaseUrl: configuredBase(request, token),
@@ -2422,7 +2435,10 @@ async function handleRequest(request, env, executionCtx = null) {
       }, 201, { noStore: true })
     } catch (error) {
       if (error instanceof GeminiValidationError) {
-        return json({ error: error.message, errorCode: error.code,
+        const requestContext = geminiRequestContext(request)
+        console.warn(JSON.stringify({ tag: 'VUEO_GEMINI_VALIDATION_FAILED', errorCode: error.code,
+          reason: error.reason, upstreamStatus: error.upstreamStatus, apiStatus: error.apiStatus, requestContext }))
+        return json({ error: error.message, errorCode: error.code, errorReason: error.reason, requestContext,
           upstreamStatus: error.upstreamStatus, upstreamApiStatus: error.apiStatus,
           errorDetail: error.detail, model: geminiModel(env) }, 422, { noStore: true })
       }

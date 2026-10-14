@@ -1,0 +1,24 @@
+VUEO SmartSubs Gemini Location Diagnostics v2 — workflow-compatible replacement
+
+Replaces the ENTIRE prior VUEO-SmartSubs-Gemini-Location-Diagnostics-No-YML.zip patch.
+Based on the same supplied VUEO-SmartSubs-main.zip, preserving all diagnostics from v1.
+
+Fix: the supplied apply workflow deletes root test/ and tests/ before npm run check.
+Syntax check now permits those optional directories to be absent; src/ and scripts/ remain mandatory.
+Diagnostic tests now live under scripts/ and npm test still runs all 10 checks.
+No YML changes, missing-test skipping, translation changes or placement changes.
+
+Because the failed upload ZIP remains in the GitHub repository:
+1. Delete the older failed diagnostics ZIP from the repository root.
+2. Upload ONLY this v2 ZIP to the VUEO-SmartSubs repository root.
+The existing workflow rejects overlapping files between ZIPs, so do not leave both versions there.
+
+After applying and deploying:
+Open https://vueo-smartsubs.nusmart.workers.dev/diagnose/gemini
+Enter your own key and press Run both checks (two small Gemini quota-consuming requests).
+Share only the displayed sanitized results. The key is not stored by the page.
+
+Tests: npm run check passed with no root test/tests directory; npm test passed all 10 checks.
+Live Google access and Cloudflare deployment were not performed here.
+Fresh translation working is evidence that the translation path still has Gemini access;
+compare the configure/validation path rather than replacing the V2 translation engine.

@@ -33,3 +33,16 @@ Selecting a Malay AI track fetches its `/c/TOKEN/translated/TRANSLATION_TOKEN.vt
 Native/English proxy delivery uses `/c/TOKEN/source/SOURCE_HASH`, bound to the same configuration. Source headers stay in backend storage. VUEO can keep its original plugin subtitle tracks too.
 
 Old GET `/c/TOKEN/subtitles/movie-or-series/id.json` returns an empty list in this fork; it no longer discovers OpenSubtitles. Use the POST input above. `/v1/jobs` from the superseded backend is not supported.
+
+
+## Gemini location diagnostics
+
+Open `/diagnose/gemini` in a browser. On explicit user action it performs two tiny generation checks with the same BYOK key/model: `POST /v1/gemini/diagnose` and a direct browser request to Google's Gemini API. This consumes quota. The key is not persisted and the UI clears its field after completion. Results exclude generated content, credentials and session tokens.
+
+`POST /v1/gemini/diagnose` accepts the same JSON key input as `/v1/session`, requires the existing server secret and uses the existing configuration limiter. On successful validation it returns HTTP 200 with `ok`, `model`, and `requestContext`, without creating a config token. Errors use the existing sanitized validation response.
+
+Existing `/v1/session` keeps its HTTP 201/token contract. Gemini validation failures keep existing app-compatible `errorCode` values, with additive `errorReason` and `requestContext`. Regional precondition errors report `GEMINI_LOCATION_UNSUPPORTED` as the reason. The log event `VUEO_GEMINI_VALIDATION_FAILED` contains classifications and incoming location metadata only; no key, token, prompt or raw Google response is logged.
+
+`ingressColo` and `clientCountry` describe incoming metadata. `placement` is the incoming `cf-placement` header when available. These are not independently verified egress evidence. `googleObservedEgress` is explicitly `unknown`. No extra IP lookup is made. Fetch checks do not validate Queue placement or translation.
+
+Worker-only regional rejection is evidence to investigate the Worker outbound route/IP classification, not proof of an exact egress location. Browser CORS/network failures are inconclusive. Placement, translation, Queue, chunking, retries and cache behavior are unchanged by this patch.
