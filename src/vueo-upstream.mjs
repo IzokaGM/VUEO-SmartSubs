@@ -57,7 +57,7 @@ function normaliseSource(track) {
   }
   if (Buffer.byteLength(JSON.stringify(headers)) > 8192) throw new VueoInputError('Source headers too large')
   if (text && (!track.text.trim() || Buffer.byteLength(track.text) > MAX_BYTES)) throw new VueoInputError('Subtitle text is empty or exceeds 2 MiB')
-  return { lang, id: String(track.id || '').slice(0,256), ...(text ? { text: track.text } : { url: safeUrl(track.url), headers }) }
+  return { lang, id: String(track.id || '').slice(0,256), providerName: String(track.providerName || '').replace(/[\r\n\0]/g, ' ').slice(0,160), ...(text ? { text: track.text } : { url: safeUrl(track.url), headers }) }
 }
 
 export async function prepareVueoSources(input, env, configId) {
@@ -69,7 +69,7 @@ export async function prepareVueoSources(input, env, configId) {
   const tracks = []
   for (const source of sources) {
     // The original deduper compares language/URL, not the provider's display ID.
-    const id = createHash('sha256').update(JSON.stringify({ configId, media, source: { ...source, id: undefined } })).digest('hex')
+    const id = createHash('sha256').update(JSON.stringify({ configId, media, source: { ...source, id: undefined, providerName: undefined } })).digest('hex')
     // Reuse V2 AES-GCM config-token encryption for private source text/headers.
     const token = userConfig.createUserConfigToken(JSON.stringify({ ...source, owner: configId }), { secret: sourceSecret(env), model: 'vueo-source-v1' })
     await env.SMARTSUBS_CACHE.put(SOURCE_PREFIX + id, token, { expirationTtl: Math.max(60, Math.floor(Number(env.SMARTSUBS_CACHE_TTL_MS || 15552000000)/1000)) })
@@ -150,10 +150,11 @@ export async function canonicalVueoTranslationSource(tokenData, env, configId, f
   // Freeze exact input for Queue/direct translation, so the bytes hashed here
   // are also the bytes translated even if the provider URL later changes.
   const frozen = userConfig.createUserConfigToken(JSON.stringify({
-    owner: configId, lang: source.lang, text
+    owner: configId, lang: source.lang, text, id: source.id, providerName: source.providerName
   }), { secret: sourceSecret(env), model: 'vueo-source-v1' })
   await env.SMARTSUBS_CACHE.put(SOURCE_PREFIX + id, frozen, {
     expirationTtl: Math.max(60, Math.floor(Number(env.SMARTSUBS_CACHE_TTL_MS || 15552000000) / 1000))
   })
-  return { ...tokenData, url: SOURCE_BASE + id, sourceId: id, cacheId: id }
+  return { ...tokenData, url: SOURCE_BASE + id, sourceId: id, cacheId: id,
+    providerSubtitleId: String(source.id || ''), providerName: String(source.providerName || '') }
 }

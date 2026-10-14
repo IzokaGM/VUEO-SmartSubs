@@ -1,0 +1,13 @@
+Apply ONLY to VUEO-SmartSubs repository root. No YML or wrangler changes.
+Page title and heading: VUEO x SmartSubs, without Diagnose or dash.
+English source overview card: original provider subtitle ID instead of hash,
+actual provider name instead of OpenSubtitles.
+Source hashing, cache keys, Queue and translation behavior remain unchanged.
+Provider metadata is explicitly excluded from transport and content identity.
+Full hash remains in existing technical logs and other unchanged diagnostic fields.
+The source metadata is captured on new translation-request events. Old logs or app
+versions without metadata display Not available / Provider not available honestly.
+Update the matching app patch, reopen episode and select Malay AI for new events.
+Retains earlier content-cache and Gemini diagnostics fixes.
+Validation: npm run check and all 19 tests pass, including cache identity invariance,
+source metadata propagation and escaped overview rendering. Not live-deployed here.
