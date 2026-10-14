@@ -695,7 +695,7 @@ function renderConfiguredDiagnosePage(configId, events, control = { enabled: tru
   const heroMeta = latestPlayerSelection && sourceSelected
     ? `Latest AI selection: ${formatMalaysiaTime(latestPlayerSelection.ts)}`
     : `Latest subtitle request: ${lastSubtitle ? formatMalaysiaTime(lastSubtitle.ts) : 'Not recorded'}`
-  const heroSourceMeta = latestPlayerSelection && sourceSelected ? `Source ${displaySourceId}${sourceMetadata.providerName ? ' · ' + displayProviderName : ''}` : ''
+  const heroSourceMeta = latestPlayerSelection && sourceSelected ? `Source ${displaySourceId}` : ''
 
   const guidance = activeFailure
     ? 'A recent failure was recorded. See the failure details and recent events below.' : ''

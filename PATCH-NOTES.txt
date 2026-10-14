@@ -1,18 +1,3 @@
-V2 source display repair, apply each ZIP to its own repository root.
-App ZIP: VUEO app. Worker ZIP: VUEO-SmartSubs ONLY. No YML or binding changes.
-
-Hero Source now shows original provider subtitle ID and provider name.
-App sends display metadata on the listing POST and selected translation GET.
-Worker accepts bounded encoded display headers to supplement older source records.
-Those fields are display-only and never participate in cache/source identity.
-Cached translations, Queue and translation engine remain unchanged.
-Prior plugin-only input filter, player-facing labels and source display ID are retained.
-
-After both updates, reopen episode and select Malay AI for a fresh diagnostics event.
-Old event rows are not rewritten; no translation-cache clearing is required.
-Existing source metadata is still a fallback for clients without display headers.
-
-Validation: npm run check, 21 Node tests pass, including complete POST -> cached GET
--> persistent diagnostic event -> overview/hero display and legacy-source missing-name
-recovery. Actual Android build/device and live Cloudflare deployment not tested here.
-The exact cause in the user's live installation is not yet proven by its JSON export.
+Apply to VUEO-SmartSubs worker repository root only. No app patch, no YML.
+Top Source line shows source subtitle ID only. English source card retains provider name.
+Includes prior source-metadata handling in this worker file. Hash and cache unchanged.
