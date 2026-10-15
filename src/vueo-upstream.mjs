@@ -60,20 +60,76 @@ function normaliseSource(track) {
   return { lang, id: String(track.id || '').slice(0,256), providerName: String(track.providerName || '').replace(/[\r\n\0]/g, ' ').slice(0,160), ...(text ? { text: track.text } : { url: safeUrl(track.url), headers }) }
 }
 
+// Candidate policy belongs to the worker. Old clients without origin metadata
+// remain supported; new clients explicitly identify plugin/addon sources.
+export function selectVueoSources(input) {
+  const includeAddons = input.includeAddonSources === true
+  const candidates = input.subtitles.filter(track => {
+    if (!track || typeof track !== 'object') return false
+    if (track.providerId === 'vueo-smartsubs-ai' || /gemini-ai-/i.test(String(track.id || ''))) return false
+    if (!['en', 'eng', 'english'].includes(String(track.lang || track.language || '').trim().toLowerCase())) return false
+    if (track.providerId && !String(track.providerId).startsWith('plugin:') && !includeAddons) return false
+    if (typeof track.text === 'string') return true
+    const hintFormat = value => {
+      const hint = String(value || '').trim().toLowerCase()
+      if (hint === 'ass' || hint === 'ssa' || /text\/x-(ssa|ass)/.test(hint)) return 'unsupported'
+      if (hint === 'ttml' || hint === 'xml' || hint.includes('ttml')) return 'unsupported'
+      if (hint === 'vtt' || hint.includes('text/vtt') || hint.includes('webvtt')) return 'supported'
+      if (hint === 'srt' || hint.includes('subrip')) return 'supported'
+      return null
+    }
+    let decodedUrl = String(track.url || '')
+    try { decodedUrl = decodeURIComponent(decodedUrl) } catch {}
+    const path = decodedUrl.split(/[?#]/)[0]
+    let format = hintFormat(String(track.mimeType || '').split(';')[0]) || hintFormat(path.split('.').pop())
+    if (!format) {
+      const query = new URLSearchParams(decodedUrl.split('?')[1]?.split('#')[0] || '')
+      for (const [key, value] of query) {
+        if (['format','type','ext','extension','mime','mimetype','contenttype'].includes(key.toLowerCase())) {
+          format = hintFormat(value)
+          if (format) break
+        }
+      }
+    }
+    if (format === 'unsupported') return false
+    try { safeUrl(track.url); return true } catch { return false }
+  }).sort((a, b) => Number(!String(a.providerId || '').startsWith('plugin:')) - Number(!String(b.providerId || '').startsWith('plugin:')))
+  const seen = new Set()
+  return candidates.filter(track => {
+    const key = typeof track.text === 'string' ? 'text:' + track.text : track.url
+    if (seen.has(key)) return false
+    seen.add(key); return true
+  }).slice(0, 5)
+}
+
+function sourceDisplayId(track) {
+  const explicit = typeof track.displayId === 'string' ? track.displayId.trim() : ''
+  if (explicit) return explicit.slice(0, 512)
+  const raw = String(track.id || '').trim()
+  const id = raw.match(/^.+?:\d+:(.+)$/)?.[1]?.trim() || raw
+  return !id || /^(vueo-subtitle:|external:)/.test(id) || /^track\s*\d+$/i.test(id) || ['en', 'eng', 'english'].includes(id.toLowerCase()) ? '' : id
+}
+
 export async function prepareVueoSources(input, env, configId) {
   const media = input.media
   if (!media || !['movie','series'].includes(media.type) || typeof media.id !== 'string' || !/^[\w:.-]{1,128}$/.test(media.id)) throw new VueoInputError('Provide media.type and media.id')
   if (!Array.isArray(input.subtitles) || input.subtitles.length > 50) throw new VueoInputError('Provide up to 50 subtitle tracks')
-  const sources = input.subtitles.map(normaliseSource)
+  const sources = selectVueoSources(input).map(track => ({
+    ...normaliseSource({ ...track, lang: 'eng' }),
+    providerDisplayId: sourceDisplayId(track),
+  }))
   if (!env.SMARTSUBS_CACHE || !sourceSecret(env)) throw new Error('SmartSubs backend bindings are not configured')
   const tracks = []
   for (const source of sources) {
     // The original deduper compares language/URL, not the provider's display ID.
-    const id = createHash('sha256').update(JSON.stringify({ configId, media, source: { ...source, id: undefined, providerName: undefined } })).digest('hex')
+    const id = createHash('sha256').update(JSON.stringify({ configId, media, source: { ...source, id: undefined, providerName: undefined, providerDisplayId: undefined } })).digest('hex')
     // Reuse V2 AES-GCM config-token encryption for private source text/headers.
     const token = userConfig.createUserConfigToken(JSON.stringify({ ...source, owner: configId }), { secret: sourceSecret(env), model: 'vueo-source-v1' })
     await env.SMARTSUBS_CACHE.put(SOURCE_PREFIX + id, token, { expirationTtl: Math.max(60, Math.floor(Number(env.SMARTSUBS_CACHE_TTL_MS || 15552000000)/1000)) })
-    tracks.push({ id, lang: source.lang, url: SOURCE_BASE + id })
+    tracks.push({ id, lang: source.lang, url: SOURCE_BASE + id,
+      providerSubtitleId: source.id, sourceDisplayId: source.providerDisplayId,
+      sourceProviderName: source.providerName.trim().split(/ \/ | • /).pop(),
+    })
   }
   return { media: { type: media.type, id: media.id }, tracks }
 }

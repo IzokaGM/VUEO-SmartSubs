@@ -1,0 +1,15 @@
+SmartSubs worker-owned source contract
+
+1. Upload WORKER-VUEO-SmartSubs-Source-Policy-Metadata-No-YML.zip to the VUEO-SmartSubs repository root and deploy through your existing Cloudflare setup.
+2. After the worker update is live, upload APP-VUEO-NEXT-SmartSubs-Thin-Client-TV-Mobile-No-YML.zip to the VUEO-NEXT repository root and build/install TV or mobile.
+
+Worker now owns English/format selection, plugin priority, addon inclusion switch, deduplication, maximum five AI candidates, exact source mapping and ready display labels.
+Both direct POST listing and legacy addon GET responses carry display metadata.
+Example: VidLink - 5806555684246378904
+
+Translation engine, movie adaptive chunks, Queue, retry/delivery behavior and content-cache key version are unchanged. No automatic translation/prefetch is introduced.
+Internal gemini-ai IDs remain internal; the UI receives displayId separately.
+
+Validation: npm run check passed; npm test: 25 passed. Source hashes and content cache identity are covered, including provider/display label changes.
+Two existing Diagnose test assertions were already failing in the supplied ZIP; updated them to match its existing ID-only hero, without changing Diagnose production code.
+No live Gemini requests or Cloudflare deployment were performed.

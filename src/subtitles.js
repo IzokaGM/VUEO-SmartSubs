@@ -53,11 +53,16 @@ function buildAutoSubtitle(englishSubtitle, options = {}) {
   const sourceId = upstreamId == null || String(upstreamId).trim() === ''
     ? crypto.createHash('sha1').update(englishSubtitle.url).digest('hex').slice(0, 12)
     : String(upstreamId).trim()
-  // Visible track ID identifies the exact upstream subtitle source. Delivery URL/token stay unchanged.
+  // Internal ID and delivery token are stable; display metadata is worker-owned.
   return {
     id: `gemini-ai-${sourceId}`,
     url: `${String(publicBaseUrl).replace(/\/+$/, '')}/translated/${token}.vtt`,
-    lang: 'msa'
+    lang: 'msa',
+    name: 'Malay AI', providerName: 'VUEO x SmartSubs', mimeType: 'text/vtt',
+    sourceId: englishSubtitle.providerSubtitleId ?? sourceId,
+    sourceDisplayId: englishSubtitle.sourceDisplayId ?? sourceId,
+    sourceProviderName: englishSubtitle.sourceProviderName ?? englishSubtitle.providerName ?? 'OpenSubtitles v3',
+    displayId: [englishSubtitle.sourceProviderName ?? englishSubtitle.providerName ?? 'OpenSubtitles v3', englishSubtitle.sourceDisplayId ?? sourceId].filter(Boolean).join(' - ') || 'Source unavailable',
   }
 }
 

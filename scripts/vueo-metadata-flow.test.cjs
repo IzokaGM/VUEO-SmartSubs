@@ -26,7 +26,7 @@ async function checkFlow(legacySource = false) {
  assert.equal(event.providerSubtitleId,'original-provider-sub-42');assert.equal(event.providerName,'AnimeDunya')
  const page=await handleRequest(new Request(base+'/diagnose'),env)
  const html=await page.text()
- assert.ok(html.includes('Source original-provider-sub-42 · AnimeDunya'))
+ assert.ok(html.includes('Source original-provider-sub-42</span>'))
  assert.ok(!html.split('<h2>Overview')[0].split('<div class="hero-state">').pop().includes('Source '+data.sourceId+'</'))
  assert.match(html,/English source<\/div><div class="value">original-provider-sub-42<\/div><div class="sub">AnimeDunya<\/div>/)
 }

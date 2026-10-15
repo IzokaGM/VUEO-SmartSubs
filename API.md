@@ -46,3 +46,24 @@ Existing `/v1/session` keeps its HTTP 201/token contract. Gemini validation fail
 `ingressColo` and `clientCountry` describe incoming metadata. `placement` is the incoming `cf-placement` header when available. These are not independently verified egress evidence. `googleObservedEgress` is explicitly `unknown`. No extra IP lookup is made. Fetch checks do not validate Queue placement or translation.
 
 Worker-only regional rejection is evidence to investigate the Worker outbound route/IP classification, not proof of an exact egress location. Browser CORS/network failures are inconclusive. Placement, translation, Queue, chunking, retries and cache behavior are unchanged by this patch.
+
+
+## Worker-owned source selection and display metadata
+
+`POST /c/<token>/subtitles` accepts up to 50 source records plus
+`includeAddonSources` (boolean, default false). New clients supply the original
+`lang`, `providerId`, `providerName`, optional `mimeType` and optional existing
+`displayId`, alongside `id` and exactly one of `url` or `text`. URL headers retain
+the existing allowlist. Clients may forward originals without filtering by language.
+The worker filters English VTT/SRT candidates, prioritizes plugins, removes
+duplicates and limits AI choices to five. Legacy clients without providerId
+retain their preselected-input behavior. Listing does not download or translate.
+
+AI records carry `id`, `url`, `lang`, `name`, `providerName`, `mimeType`,
+`displayId`, `sourceId`, `sourceDisplayId` and `sourceProviderName`.
+`sourceId` identifies the original supplied source; the worker prepares
+`displayId` as `Provider - English display ID`. Consumers read these fields
+directly and never match response records by array position.
+The addon GET response also carries prepared display metadata.
+Internal IDs, signed translation tokens and translation cache keys retain
+their existing identity; display metadata is not included in their hash.
