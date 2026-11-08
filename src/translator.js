@@ -456,7 +456,7 @@ function buildIndexedPrompt(items) {
     'Translation rules:',
     '- Use standard grammar and vocabulary. Avoid stiff or overly literal phrasing.',
     '- Preserve meaning, intent, tone, emotion and intensity. Translate idioms and slang by their intended meaning.',
-    '- Match formality to context. Prefer neutral pronouns and forms of address when speaker identity or relationships are unclear; preserve established relationships when clear. Never guess.',
+    '- Preserve the speaker\'s perspective and use appropriate pronouns without changing who is speaking or being addressed.',
     '- Consider surrounding dialogue and story context, but keep each translation within its corresponding cue.',
     '- Do not invent, omit, censor or exaggerate meaningful content.',
     '- Preserve names, numerical values, cultural and religious references, speaker labels and formatting tags. Do not introduce local references.',
