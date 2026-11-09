@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto'
+import { createHmac, createHash, timingSafeEqual } from 'node:crypto'
 import manifest from './manifest.js'
 import configuredManifestModule from './configured-manifest.js'
 import subtitlesModule from './subtitles.js'
@@ -85,10 +85,16 @@ const DIAG_EXPORT_SCRIPT = `(() => {
 })()`
 const DIAG_EXPORT_SCRIPT_HASH = createHash('sha256').update(DIAG_EXPORT_SCRIPT, 'utf8').digest('base64')
 
+function diagnosticOwner(apiKey, secret) {
+  return createHmac('sha256', secret).update('smartsubs-diagnostics-v1\0' + apiKey).digest('hex').slice(0, 16)
+}
+function diagnosticMonitorStub(env, configId) {
+  return monitorStub(env, env.__diagnosticOwner || configId)
+}
 async function diagnosticState(env, configId) {
   if (!env || !diagnosticAdminReady(env) || !/^[a-f0-9]{16}$/.test(String(configId || ''))) return { enabled: false, since: 0 }
   const fetchState = async () => {
-    const stub = monitorStub(env, configId)
+    const stub = diagnosticMonitorStub(env, configId)
     if (!stub) return { enabled: false, since: 0 }
     try {
       const response = await stub.fetch('https://smartsubs-monitor.internal/diagnostics/state')
@@ -108,7 +114,7 @@ async function diagnosticState(env, configId) {
 
 async function recordConfiguredDiagnostic(env, configId, event) {
   if (!(await diagnosticState(env, configId)).enabled) return false
-  return recordDiagnostic(env.SMARTSUBS_CACHE, configId, event)
+  return recordDiagnostic(env.SMARTSUBS_CACHE, env.__diagnosticOwner || configId, { ...event, device: env.__diagnosticDevice || "Unknown", sessionId: configId })
 }
 
 function diagnosticAdminReady(env) {
@@ -562,7 +568,7 @@ function renderTechnicalEvent(item = {}) {
   const metrics = view.metrics
     .map(metric => `<span><b>${escapeHtml(metric.label)}</b> ${escapeHtml(metric.value)}</span>`)
     .join('')
-  return `<article class="event-card"><div class="event-top"><span class="event-badge ${escapeHtml(view.tone)}">${escapeHtml(view.category)}</span><time>${escapeHtml(formatMalaysiaTime(item.ts))}</time></div><div class="event-title">${escapeHtml(view.title)}</div>${view.summary ? `<div class="event-summary">${escapeHtml(view.summary)}</div>` : ''}${metrics ? `<div class="event-metrics">${metrics}</div>` : ''}</article>`
+  return `<article class="event-card"><div class="event-top"><span class="event-badge ${escapeHtml(view.tone)}">${escapeHtml(view.category)} · ${escapeHtml(item.device || "Unknown")}</span><time>${escapeHtml(formatMalaysiaTime(item.ts))}</time></div><div class="event-title">${escapeHtml(view.title)}</div>${view.summary ? `<div class="event-summary">${escapeHtml(view.summary)}</div>` : ''}${metrics ? `<div class="event-metrics">${metrics}</div>` : ''}</article>`
 }
 
 function renderRawTechnicalEvent(item = {}) {
@@ -1593,6 +1599,7 @@ async function processQueueMessage(body, env, options = {}) {
   let selectedSourceId = ''
   try {
     userConfig = decodeUserConfigToken(configToken, { secret })
+    env = { ...env, __diagnosticOwner: diagnosticOwner(userConfig.apiKey, secret), __diagnosticDevice: 'Queue' }
     const tokenData = await canonicalVueoTranslationSource(
       decodeTranslationTokenData(translationToken, secret), env, configId)
     selectedSourceId = tokenData.sourceId
@@ -1918,6 +1925,9 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
   }
 
   const configId = tokenFingerprint(token)
+  const deviceHeader = request.headers.get('X-Vueo-Platform')
+  env = { ...env, __diagnosticOwner: diagnosticOwner(userConfig.apiKey, secret),
+    __diagnosticDevice: ['TV', 'Mobile'].includes(deviceHeader) ? deviceHeader : 'Unknown' }
   env.__kvUsageTracker?.setConfigId(configId)
 
   if (request.method === 'POST' && suffix === '/subtitles') {
@@ -2005,17 +2015,17 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
   if (request.method === 'GET' && suffix === '/diagnose') {
     const state = await diagnosticState(env, configId)
     const events = state.enabled
-      ? (await readDiagnostics(env.SMARTSUBS_CACHE, configId).catch(() => [])).filter(item => Number(item.ts) >= state.since)
+      ? (await readDiagnostics(env.SMARTSUBS_CACHE, env.__diagnosticOwner).catch(() => [])).filter(item => Number(item.ts) >= state.since)
       : []
-    return send(200, 'text/html; charset=utf-8', renderConfiguredDiagnosePage(configId, events, {
-      ...state, ready: diagnosticAdminReady(env) && Boolean(monitorStub(env, configId))
+    return send(200, 'text/html; charset=utf-8', renderConfiguredDiagnosePage(env.__diagnosticOwner, events, {
+      ...state, ready: diagnosticAdminReady(env) && Boolean(diagnosticMonitorStub(env, configId))
     }), { noStore: true, csp: true, scriptHash: DIAG_EXPORT_SCRIPT_HASH, headers: { 'x-robots-tag': 'noindex, nofollow' } })
   }
 
   if (request.method === 'POST' && suffix === '/diagnose/clear') {
     const state = await diagnosticState(env, configId)
     if (!state.enabled) return send(409, 'text/plain; charset=utf-8', 'Diagnostics is not enabled', { noStore: true })
-    const stub = monitorStub(env, configId)
+    const stub = diagnosticMonitorStub(env, configId)
     if (!stub) return send(503, 'text/plain; charset=utf-8', 'Diagnostics switch requires SMARTSUBS_DELIVERY', { noStore: true })
     try {
       const response = await stub.fetch('https://smartsubs-monitor.internal/diagnostics/state', {
@@ -2052,7 +2062,7 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
         (action === 'on' && !validDiagnosticAdminKey(form.get('adminKey'), adminKey))) {
       return send(403, 'text/plain; charset=utf-8', 'Invalid admin key or action', { noStore: true })
     }
-    const stub = monitorStub(env, configId)
+    const stub = diagnosticMonitorStub(env, configId)
     if (!stub) return send(503, 'text/plain; charset=utf-8', 'Diagnostics switch requires SMARTSUBS_DELIVERY', { noStore: true })
     try {
       const response = await stub.fetch('https://smartsubs-monitor.internal/diagnostics/state', {
