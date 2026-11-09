@@ -1,0 +1,3 @@
+npm run check: passed
+npm test: 28 tests passed, 0 failed
+Node mocked integration tests; not a live deployment.

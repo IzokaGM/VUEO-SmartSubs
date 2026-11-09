@@ -203,6 +203,11 @@ export async function canonicalVueoTranslationSource(tokenData, env, configId, f
     version: 'vueo-content-v1', owner: configId, media: tokenData.media,
     lang: source.lang, text
   })).digest('hex')
+  // Share result identity, never the private source record or credentials.
+  const cacheId = createHash('sha256').update(JSON.stringify({
+    version: 'vueo-shared-content-v1', media: tokenData.media,
+    lang: source.lang, targetLang: 'msa', text
+  })).digest('hex')
   // Freeze exact input for Queue/direct translation, so the bytes hashed here
   // are also the bytes translated even if the provider URL later changes.
   const frozen = userConfig.createUserConfigToken(JSON.stringify({
@@ -211,6 +216,6 @@ export async function canonicalVueoTranslationSource(tokenData, env, configId, f
   await env.SMARTSUBS_CACHE.put(SOURCE_PREFIX + id, frozen, {
     expirationTtl: Math.max(60, Math.floor(Number(env.SMARTSUBS_CACHE_TTL_MS || 15552000000) / 1000))
   })
-  return { ...tokenData, url: SOURCE_BASE + id, sourceId: id, cacheId: id,
+  return { ...tokenData, url: SOURCE_BASE + id, sourceId: id, cacheId, legacyCacheId: id,
     providerSubtitleId: String(source.id || ''), providerName: String(source.providerName || '') }
 }

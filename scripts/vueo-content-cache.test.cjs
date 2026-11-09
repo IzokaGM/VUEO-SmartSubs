@@ -75,7 +75,8 @@ test('Queue receives canonical token and uses the same cache key as the player',
  let queued=0
  env.SMARTSUBS_TRANSLATION_QUEUE={async send(body){
   queued++
-  const data=decodeTranslationTokenData(body.translationToken,secret)
+  const {canonicalVueoTranslationSource}=await import('../src/vueo-upstream.mjs')
+  const data=await canonicalVueoTranslationSource(decodeTranslationTokenData(body.translationToken,secret),env,owner)
   assert.notEqual(data.sourceId,track.id)
   assert.equal(body.cacheKey,makeCacheKey(data.url,model,'m8-v1',data.cacheId))
   const frozen=await vueoUpstreamOptions(env,data.url,()=>{throw Error('no upstream download in Queue')},owner).fetchImpl(data.url)
@@ -87,4 +88,53 @@ test('Queue receives canonical token and uses the same cache key as the player',
  const response=await handleRequest(new Request(`https://worker.example/c/${config}/translated/${token}.vtt`),env)
  assert.equal(response.status,200);assert.equal(queued,1)
  assert.equal(await response.text(),text.replace('Hello','Helo'))
+})
+
+test('different API keys share results but keep private source records isolated',async()=>{
+ const env=environment(), model='gemini-3.5-flash-lite'
+ const a=createUserConfigToken('key-a',{secret,model}), b=createUserConfigToken('key-b',{secret,model})
+ const ownerA=tokenFingerprint(a),ownerB=tokenFingerprint(b)
+ const ca=await source({text},env,ownerA), cb=await source({text},env,ownerB)
+ assert.equal(ca.cacheId,cb.cacheId)
+ assert.notEqual(ca.sourceId,cb.sourceId)
+ const {canonicalVueoTranslationSource,vueoUpstreamOptions}=await import('../src/vueo-upstream.mjs')
+ await assert.rejects(canonicalVueoTranslationSource(ca,env,ownerB),/does not belong/)
+ const ra=await vueoUpstreamOptions(env,ca.url,fetch,ownerA).fetchImpl(ca.url)
+ assert.equal(await ra.text(),text)
+ const {CloudflareTranslationCache,makeCacheKey}=await import('../src/cf-cache.mjs')
+ const translated=text.replace('Hello','Helo')
+ await new CloudflareTranslationCache({kv:env.SMARTSUBS_CACHE}).set(makeCacheKey(ca.url,model,'m8-v1',ca.cacheId),translated)
+ const {handleRequest}=await import('../src/cloudflare-worker.mjs')
+ const token=createTranslationToken(cb.url,secret,cb.sourceId,media)
+ const previous=global.fetch
+ global.fetch=()=>{throw Error('HIT must not call Gemini or network')}
+ env.SMARTSUBS_TRANSLATION_QUEUE={send(){throw Error('HIT must not enqueue')}}
+ try {
+  const response=await handleRequest(new Request(`https://worker.example/c/${b}/translated/${token}.vtt`),env)
+  assert.equal(response.status,200);assert.equal(await response.text(),translated)
+ } finally {global.fetch=previous}
+})
+test('legacy owner cache promotes into shared cache without generation',async()=>{
+ const env=environment(),model='gemini-3.5-flash-lite'
+ const config=createUserConfigToken('legacy-key',{secret,model}),owner=tokenFingerprint(config)
+ const c=await source({text},env,owner)
+ const {CloudflareTranslationCache,makeCacheKey}=await import('../src/cf-cache.mjs')
+ const cache=new CloudflareTranslationCache({kv:env.SMARTSUBS_CACHE})
+ const translated=text.replace('Hello','Lama')
+ await cache.set(makeCacheKey(c.url,model,'m8-v1',c.legacyCacheId),translated)
+ const {handleRequest}=await import('../src/cloudflare-worker.mjs')
+ env.SMARTSUBS_TRANSLATION_QUEUE={send(){throw Error('must not enqueue')}}
+ const token=createTranslationToken(c.url,secret,c.sourceId,media)
+ const response=await handleRequest(new Request(`https://worker.example/c/${config}/translated/${token}.vtt`),env)
+ assert.equal(response.status,200);assert.equal(await response.text(),translated)
+ assert.equal(await cache.get(makeCacheKey(c.url,model,'m8-v1',c.cacheId)),translated)
+})
+test('shared results remain separated by episode model and prompt cache version',async()=>{
+ const env=environment(),c=await source({text},env)
+ const {canonicalVueoTranslationSource}=await import('../src/vueo-upstream.mjs')
+ const other=await canonicalVueoTranslationSource({...c,media:{type:'series',id:'tt7441658:2:2'}},env,'owner')
+ assert.notEqual(c.cacheId,other.cacheId)
+ const {makeCacheKey}=await import('../src/cf-cache.mjs')
+ assert.notEqual(makeCacheKey(c.url,'model-a','v1',c.cacheId),makeCacheKey(c.url,'model-b','v1',c.cacheId))
+ assert.notEqual(makeCacheKey(c.url,'model-a','v1',c.cacheId),makeCacheKey(c.url,'model-a','v2',c.cacheId))
 })

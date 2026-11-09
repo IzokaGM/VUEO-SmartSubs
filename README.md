@@ -1,41 +1,10 @@
-# VUEO SmartSubs
+# Shared SmartSubs translation result cache
+Based on backend VUEO-SmartSubs-main (3). Copy the included src and scripts files into your backend, or apply CHANGES.diff. Then deploy using your existing Worker workflow. No app update or new binding is required.
 
-**AI-powered Bahasa Melayu Malaysia subtitles for VUEO.**
+Shared result identity includes normalized exact subtitle text/timing, media, source language and fixed target msa. Model and SMARTSUBS_CACHE_VERSION remain part of the final key. Session owner is excluded ONLY from result identity. Encrypted source records and authorization remain owner-scoped. Queue and prefetch resolve the same canonical shared identity before cache access.
 
-SmartSubs is VUEO's subtitle translation backend. It uses Gemini to translate English subtitle tracks supplied by VUEO plugins into natural Malaysian Malay, on demand.
+On a shared miss, the selected GET can reuse this authenticated session owner's legacy content cache entry, and promote it into shared cache. Other historical owners cannot be discovered automatically: opening the subtitle once using its old configuration can seed the shared cache. Otherwise the first request may still generate once. No blanket historical migration is claimed.
 
-This project is built specifically for VUEO and works through its subtitle selection flow.
+Prompt behavior is unchanged. Keep SMARTSUBS_CACHE_VERSION updated when deploying incompatible prompt changes. Existing token URLs and private source TTL behavior remain; downloading the original selected subtitle may still be needed to compute content identity even on a translation HIT. This does not mean Gemini ran again.
 
-## Features
-
-- **Malaysian Malay subtitles** — contextual translation that preserves the dialogue's meaning and tone.
-- **Your own Gemini key** — connect using your personal Gemini API key.
-- **Plugin subtitle support** — translates eligible English tracks provided through VUEO.
-- **On-demand translation** — translation starts when an AI subtitle track is selected.
-- **Cached results** — reuses available translations to avoid unnecessary processing.
-- **Multiple source choices** — offers up to five eligible AI subtitle options.
-
-## Using SmartSubs in VUEO
-
-With a compatible VUEO integration:
-
-1. Open **VUEO → Enhancements → Gemini** and connect your Gemini API key.
-2. Open a movie or episode with an eligible English subtitle source.
-3. Select a **Malay AI** subtitle option.
-4. Allow the translation to finish before playback displays the translated subtitles.
-
-Available tracks depend on the subtitles supplied by the plugins. Translation requires a valid Gemini key with model access and available quota.
-
-## About this repository
-
-This repository contains the Cloudflare Workers backend for VUEO SmartSubs, built on the SmartSubsV2 translation engine. It handles subtitle sources, Gemini translation, caching, background processing, and delivery to VUEO.
-
-For the client integration contract, see [API.md](API.md).
-
-## Development
-
-```sh
-npm ci --ignore-scripts
-npm run check
-npm test
-```
+Tests use mocked KV/Queue/fetch. Different API keys share translated output with network/Gemini disabled; source ownership remains protected; legacy promotion succeeds; changed text/timing/episode/model/version remain separate; queue uses the canonical identity. No live deployment or TV/mobile end-to-end verification performed.

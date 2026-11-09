@@ -797,7 +797,8 @@ async function prefetchTranslation(options = {}) {
 
   try {
     if (!env.SMARTSUBS_CACHE) throw new Error('SMARTSUBS_CACHE KV binding is not configured')
-    const tokenData = decodeTranslationTokenData(match[1], secret)
+    const tokenData = await canonicalVueoTranslationSource(
+      decodeTranslationTokenData(match[1], secret), env, configId)
     selectedSourceId = tokenData.sourceId
     await diagnosticFn(env.SMARTSUBS_CACHE, configId, {
       event: 'translation-request',
@@ -1592,7 +1593,8 @@ async function processQueueMessage(body, env, options = {}) {
   let selectedSourceId = ''
   try {
     userConfig = decodeUserConfigToken(configToken, { secret })
-    const tokenData = decodeTranslationTokenData(translationToken, secret)
+    const tokenData = await canonicalVueoTranslationSource(
+      decodeTranslationTokenData(translationToken, secret), env, configId)
     selectedSourceId = tokenData.sourceId
     env.__kvUsageTracker?.setMedia(tokenData.media)
     const expectedCacheKey = translationCacheKey(tokenData, userConfig.model, env)
@@ -2110,7 +2112,16 @@ async function configuredRequest(request, env, token, suffix, executionCtx = nul
       let joinStatus = ''
       let result = null
 
-      const ready = await readReadyTranslation(env, cache, cacheKey)
+      let ready = await readReadyTranslation(env, cache, cacheKey)
+      // Migrate only this authenticated owner's legacy entry, if available.
+      if (!ready && tokenData.legacyCacheId && tokenData.legacyCacheId !== tokenData.cacheId) {
+        const legacyKey = makeCacheKey(tokenData.url, userConfig.model, cacheVersion(env), tokenData.legacyCacheId)
+        const legacy = await readReadyTranslation(env, cache, legacyKey)
+        if (legacy) {
+          await cache.set(cacheKey, legacy.vtt)
+          ready = { vtt: legacy.vtt, source: 'LEGACY_CACHE' }
+        }
+      }
       if (ready) {
         result = {
           vtt: ready.vtt,
