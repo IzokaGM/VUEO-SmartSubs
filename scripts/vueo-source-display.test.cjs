@@ -32,3 +32,17 @@ test('provider metadata survives source resolution without changing content iden
  assert.equal(first.canonical.providerSubtitleId,'original-42')
  assert.equal(first.canonical.providerName,'AnimeDunya')
 })
+
+test('event summaries use provider metadata for matching sources and keep internal ids in Raw',async()=>{
+ const {renderConfiguredDiagnosePage}=await import('../src/cloudflare-worker.mjs')
+ const html=renderConfiguredDiagnosePage('owner',[
+  {ts:1,event:'translation-request',sourceId:'internal-one',providerName:'Hi<Anime>',providerSubtitleId:'stream-en-42'},
+  {ts:2,event:'translation-delivered',sourceId:'internal-one',cache:'HIT',totalMs:957},
+  {ts:3,event:'queue-enqueued',sourceId:'unrelated-hash'}
+ ])
+ assert.ok(!html.includes('OpenSubtitles source'))
+ assert.match(html,/Hi&lt;Anime&gt; · stream-en-42 · Cache HIT · 957 ms/)
+ assert.match(html,/class="event-summary">Subtitle source<\/div>/)
+ assert.ok(!/class="event-summary">[^<]*(internal-one|unrelated-hash)/.test(html))
+ assert.match(html,/<b>sourceId<\/b>=internal-one/)
+})

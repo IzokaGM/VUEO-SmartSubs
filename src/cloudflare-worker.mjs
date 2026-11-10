@@ -22,7 +22,7 @@ const { nowMs, roundMs, logPerf } = perfModule
 const { recordDiagnostic, readDiagnostics, deriveVerdict, sanitiseEvent } = diagnosticsModule
 
 const { geminiRequestContext, renderGeminiDiagnostics } = geminiDiagnosticsModule
-const BUILD_ID = 'vueo-source-display-7'
+const BUILD_ID = 'vueo-source-display-8'
 const caches = new WeakMap()
 // Per-request memoization only. No cross-request stale state when the owner switches OFF.
 const diagnosticStateByEnv = new WeakMap()
@@ -448,6 +448,7 @@ function compactMetric(label, value) {
 function eventPresentation(item = {}) {
   const event = String(item.event || '')
   const sourceId = String(item.sourceId || '')
+  const sourceLabel = [item.providerName, item.providerSubtitleId].filter(Boolean).join(' · ') || (sourceId ? 'Subtitle source' : '')
   const metrics = []
   let category = 'EVENT'
   let tone = 'neutral'
@@ -480,23 +481,23 @@ function eventPresentation(item = {}) {
   } else if (event === 'translation-request') {
     category = 'TRANSLATE'
     title = 'AI translation requested'
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : 'Player requested Malay AI'
+    summary = sourceLabel ? sourceLabel : 'Player requested Malay AI'
     add('Mode', item.status)
   } else if (event === 'player-translation-queued' || event === 'queue-enqueued') {
     category = 'QUEUE'
     title = 'AI translation queued'
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : 'Translation job sent to Queue'
+    summary = sourceLabel ? sourceLabel : 'Translation job sent to Queue'
     add('Profile', item.profile)
     add('Status', item.status)
   } else if (event === 'queue-deduped') {
     category = 'QUEUE'
     title = 'Existing Queue job reused'
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : 'Duplicate translation job avoided'
+    summary = sourceLabel ? sourceLabel : 'Duplicate translation job avoided'
     add('Status', item.status)
   } else if (event === 'queue-translation-start') {
     category = 'TRANSLATE'
     title = 'AI translation started'
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : 'Queue consumer started translation'
+    summary = sourceLabel ? sourceLabel : 'Queue consumer started translation'
     add('Profile', item.profile)
     add('Concurrency', item.concurrency)
     add('Queue delay', item.queueDelayMs === undefined ? undefined : formatDuration(item.queueDelayMs))
@@ -505,7 +506,7 @@ function eventPresentation(item = {}) {
     tone = 'good'
     title = 'AI translation ready'
     const parts = []
-    if (sourceId) parts.push(`Source ${sourceId}`)
+    if (sourceLabel) parts.push(sourceLabel)
     if (item.cache) parts.push(`Cache ${item.cache}`)
     if (item.totalMs !== undefined) parts.push(formatDuration(item.totalMs))
     summary = parts.join(' · ') || 'Translation completed'
@@ -520,7 +521,7 @@ function eventPresentation(item = {}) {
     tone = 'good'
     title = event === 'translation-delivered' ? 'Translation delivered' : 'Queued translation joined'
     const parts = []
-    if (sourceId) parts.push(`Source ${sourceId}`)
+    if (sourceLabel) parts.push(sourceLabel)
     if (item.cache) parts.push(`Cache ${item.cache}`)
     if (item.totalMs !== undefined) parts.push(formatDuration(item.totalMs))
     if (item.waitMs !== undefined && Number(item.waitMs) > 0) parts.push(`wait ${formatDuration(item.waitMs)}`)
@@ -531,7 +532,7 @@ function eventPresentation(item = {}) {
     category = 'QUEUE'
     tone = 'warn'
     title = event === 'translation-pending' ? 'Translation still preparing' : 'Waiting for Queue result'
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : 'Player is waiting for the selected translation'
+    summary = sourceLabel ? sourceLabel : 'Player is waiting for the selected translation'
     add('Status', item.status)
     add('Wait', item.waitMs === undefined ? undefined : formatDuration(item.waitMs))
     add('Polls', item.polls)
@@ -543,21 +544,21 @@ function eventPresentation(item = {}) {
         : event === 'queue-enqueue-failed' ? 'Queue enqueue failed'
           : 'Technical failure'
     summary = item.error || item.reason || item.failureStage || item.status || 'Failure recorded'
-    add('Source', sourceId || undefined)
+    add('Source', sourceLabel || undefined)
     add('Stage', item.failureStage)
     add('Time', item.totalMs === undefined ? undefined : formatDuration(item.totalMs))
   } else if (event.startsWith('queue-')) {
     category = 'QUEUE'
     title = event.replaceAll('-', ' ')
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : (item.status || 'Queue activity')
+    summary = sourceLabel ? sourceLabel : (item.status || 'Queue activity')
     add('Wait', item.waitMs === undefined ? undefined : formatDuration(item.waitMs))
   } else if (event.startsWith('prefetch-')) {
     category = 'PREFETCH'
     title = event.replaceAll('-', ' ')
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : (item.status || 'Legacy prefetch activity')
+    summary = sourceLabel ? sourceLabel : (item.status || 'Legacy prefetch activity')
   } else {
     title = event ? event.replaceAll('-', ' ') : 'Technical event'
-    summary = sourceId ? `OpenSubtitles source ${sourceId}` : (item.status || item.result || '')
+    summary = sourceLabel ? sourceLabel : (item.status || item.result || '')
   }
 
   return { category, tone, title, summary, metrics: metrics.slice(0, 6) }
@@ -585,7 +586,7 @@ function verdictPresentation(verdict) {
     NATIVE_MALAY_RETURNED: ['Native Malay returned', 'good', 'SmartSubs returned an existing Malay subtitle without Gemini translation.'],
     NATIVE_MALAY_WITH_AUTO_FALLBACK: ['Native Malay and Malay AI offered', 'good', 'Both subtitle choices were returned to the player.'],
     SUBTITLE_REQUEST_FAILED: ['Subtitle request failed', 'bad', 'SmartSubs received the request but the subtitle request failed.'],
-    NO_ENGLISH_SOURCE_FOUND: ['No English source found', 'bad', 'OpenSubtitles returned no recognised English source for Malay AI.'],
+    NO_ENGLISH_SOURCE_FOUND: ['No English source found', 'bad', 'No recognised English subtitle source was returned for Malay AI.'],
     BYOK_NOT_CONFIGURED: ['Gemini key not configured', 'bad', 'Malay AI cannot run until BYOK configuration is valid.'],
     SUBTITLE_REQUEST_RETURNED_ZERO: ['No subtitle returned', 'bad', 'SmartSubs was requested but returned zero subtitle tracks.'],
     TRANSLATION_DELIVERED: ['Malay subtitle delivered', 'good', 'The translated Malay VTT was successfully returned to the player.'],
@@ -706,7 +707,22 @@ function renderConfiguredDiagnosePage(configId, events, control = { enabled: tru
   const guidance = activeFailure
     ? 'A recent failure was recorded. See the failure details and recent events below.' : ''
 
-  const summaryEvents = sorted.map(renderTechnicalEvent).join('') || '<p class="muted">No request events recorded since the last clear.</p>'
+  // Resolve display metadata only by the same internal source identity.
+  // Keep the original records untouched for Raw and log exports.
+  const sourceDisplay = new Map()
+  for (const item of sorted) {
+    if (!item.sourceId) continue
+    const metadata = sourceDisplay.get(item.sourceId) || {}
+    if (!metadata.providerName && item.providerName) metadata.providerName = item.providerName
+    if (!metadata.providerSubtitleId && item.providerSubtitleId) metadata.providerSubtitleId = item.providerSubtitleId
+    sourceDisplay.set(item.sourceId, metadata)
+  }
+  const summaryEvents = sorted.map(item => renderTechnicalEvent({
+    ...sourceDisplay.get(item.sourceId),
+    ...item,
+    providerName: item.providerName || sourceDisplay.get(item.sourceId)?.providerName,
+    providerSubtitleId: item.providerSubtitleId || sourceDisplay.get(item.sourceId)?.providerSubtitleId
+  })).join('') || '<p class="muted">No request events recorded since the last clear.</p>'
   const rawEvents = sorted.map(renderRawTechnicalEvent).join('') || '<p class="muted">No raw events recorded since the last clear.</p>'
   const exportPayload = {
     format: 'smartsubsv2-diagnose-log-v1',
